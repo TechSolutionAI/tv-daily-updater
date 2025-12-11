@@ -1,0 +1,120 @@
+//@version=5
+indicator("Goat Scalps Beta", overlay=true, max_lines_count=500, max_labels_count=500)
+
+// === DAILY SETUPS (UPDATE THIS DAILYd) ===fhdrrrrturrtyiituyr
+defaultSetups = "SPY|Breakdown|675.7,673.9,672.1,670.3;SPY|Breakout|678.18,680.4,681.2,682.4;TSLA|Breakdown|437.9,436.1,434.4,432.8;TSLA|Breakout|442.05,443.8,445.4,446.9;NVDA|Breakdown|192.84,191.6,190.8,189.6;NVDA|Breakout|195.06,196.1,197.4,198.9"
+
+// === INPUTS ===
+scalpString = input.string(defaultSetups, title="📋 Daily Setups (Auto-updated)", tooltip="Automatically updated daily. Override if needed.")
+
+// === ENHANCED PRICE LABEL INPUTS ===
+showPriceLabels = input.bool(true, "💎 Show Enhanced Price Labels")
+labelPosition = input.string("End of Line", "📍 Label Position", options=["End of Line", "Right Edge", "Both"])
+
+[pdo, pdh, pdl, pdt] = request.security(syminfo.tickerid, "D", [open[1], high[1], low[1], time[1]])
+
+// === PARSE SETUPS ===
+setups = str.split(scalpString, ";")
+
+splitLine(line) =>
+    parts = str.split(line, "|")
+    ticker = array.size(parts) > 0 ? array.get(parts, 0) : ""
+    setupType = array.size(parts) > 1 ? array.get(parts, 1) : ""
+    levelsStr = array.size(parts) > 2 ? array.get(parts, 2) : ""
+    [ticker, setupType, levelsStr]
+
+parseFloats(strList) =>
+    raw = str.split(strList, ",")
+    out = array.new_float()
+    for i = 0 to array.size(raw) - 1
+        val = str.tonumber(str.trim(array.get(raw, i)))
+        if not na(val)
+            array.push(out, val)
+    out
+
+// === AVG VOLUME ===
+avgVol = ta.sma(volume, 20)
+
+// === STATE ===
+var bool breakoutSignal = false
+var bool rejectionSignal = false
+var bool weakBreakout = false
+var bool weakRejection = false
+var float breakoutPrice = na
+var float rejectionPrice = na
+var int labelCounter = 0
+var line[] levelLines = array.new<line>()
+
+// === DRAW/UPDATE LINES ON LAST BAR ===
+if barstate.islast
+    if array.size(levelLines) > 0
+        for l = 0 to array.size(levelLines) - 1
+            line.delete(array.get(levelLines, l))
+        array.clear(levelLines)
+    
+    if array.size(setups) > 0
+        for i = 0 to array.size(setups) - 1
+            lineRaw = array.get(setups, i)
+            [ticker, setupType, levelsStr] = splitLine(lineRaw)
+            if str.upper(ticker) == str.upper(syminfo.ticker)
+                levels = parseFloats(levelsStr)
+                if array.size(levels) > 0
+                    // For Rejection: only first level
+                    if str.contains(setupType, "Rejection")
+                        lv = array.get(levels, 0)
+                        lineColor = color.new(#ff3366, 0)
+                        newLine = line.new(bar_index - 200, lv, bar_index + 25, lv, 
+                                          xloc=xloc.bar_index, 
+                                          color=lineColor, 
+                                          style=line.style_solid, 
+                                          width=1, 
+                                          extend=extend.none)
+                        array.push(levelLines, newLine)
+                    // For others: loop through all levels
+                    else
+                        for j = 0 to array.size(levels) - 1
+                            lv = array.get(levels, j)
+                            lineColor = str.contains(setupType,"Breakout") ? color.new(#00ff88,0) : color.new(#ff8800,0)
+                            newLine = line.new(bar_index - 200, lv, bar_index + 25, lv, 
+                                              xloc=xloc.bar_index, 
+                                              color=lineColor, 
+                                              style=line.style_solid, 
+                                              width=1, 
+                                              extend=extend.none)
+                            array.push(levelLines, newLine)
+
+// === STATIC PRICE LABELS ===
+var label[] staticLabels = array.new<label>()
+
+if barstate.islast and showPriceLabels
+    if array.size(staticLabels) > 0
+        for l = 0 to array.size(staticLabels) - 1
+            label.delete(array.get(staticLabels, l))
+        array.clear(staticLabels)
+
+    for i = 0 to array.size(setups) - 1
+        lineRaw = array.get(setups, i)
+        [ticker, setupType, levelsStr] = splitLine(lineRaw)
+        if str.upper(ticker) == str.upper(syminfo.ticker)
+            levels = parseFloats(levelsStr)
+            if array.size(levels) > 0
+                // Rejection → only first level
+                if str.contains(setupType,"Rejection")
+                    lv = array.get(levels, 0)
+                    lineColor = color.new(#ff3366,0)
+                    bgColor   = color.new(lineColor, 100)
+                    emoji     = "🔻❌"
+                    labelText = emoji + " " + str.tostring(lv, "##.00")
+                    newLabel  = label.new(bar_index + 22, lv, labelText, xloc=xloc.bar_index, yloc=yloc.price, style=label.style_label_left, color=bgColor, textcolor=lineColor, size=size.huge, tooltip=str.upper(ticker)+" "+setupType+" Level: "+str.tostring(lv,"#.##"))
+                    array.push(staticLabels, newLabel)
+
+                // Breakout/Breakdown → all levels
+                else
+                    for j = 0 to array.size(levels) - 1
+                        lv = array.get(levels, j)
+                        lineColor = str.contains(setupType,"Breakout") ? color.new(#00ff88,0) : color.new(#ff8800,0)
+                        bgColor   = color.new(lineColor, 100)
+                        emoji     = str.contains(setupType,"Breakout") ? "🔼" : "🔻"
+                        labelText = emoji + " " + str.tostring(lv, "##.00")
+                        newLabel  = label.new(bar_index + 22, lv, labelText, xloc=xloc.bar_index, yloc=yloc.price, style=label.style_label_left, color=bgColor, textcolor=lineColor, size=size.huge, tooltip=str.upper(ticker)+" "+setupType+" Level: "+str.tostring(lv,"#.##"))
+                        array.push(staticLabels, newLabel)

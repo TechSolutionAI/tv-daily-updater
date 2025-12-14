@@ -7,7 +7,7 @@ const { SWJMessageParser } = require('./parser');
 const DISCORD_BOT_TOKEN = process.env.DISCORD_TOKEN;
 const TARGET_CHANNEL_ID = '1226485601902133320'; //goat-scalps channel id
 const TARGET_USER_ID = '1389761466596327514';  //user id
-const OUTPUT_CHANNEL_ID = '1396983481137107165'; //maro-testing channel id
+const OUTPUT_CHANNEL_ID = '1449115591330894025'; //marco-testing channel id
 
 const client = new Client({
 	intents: [

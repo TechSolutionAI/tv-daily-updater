@@ -1,21 +1,81 @@
 //@version=5
-indicator("Goat Scalps Beta", overlay=true, max_lines_count=500, max_labels_count=500)
 
-// === DAILY SETUPS (UPDATE THIS DAILYd) ===fhdrrrrturrtyiituyr
-defaultSetups = "SPY|Breakdown|675.7,673.9,672.1,670.3;SPY|Breakout|678.18,680.4,681.2,682.4;TSLA|Breakdown|437.9,436.1,434.4,432.8;TSLA|Breakout|442.05,443.8,445.4,446.9;NVDA|Breakdown|192.84,191.6,190.8,189.6;NVDA|Breakout|195.06,196.1,197.4,198.9"
+//Scalp levels Start
 
-// === INPUTS ===
-scalpString = input.string(defaultSetups, title="📋 Daily Setups (Auto-updated)", tooltip="Automatically updated daily. Override if needed.")
 
-// === ENHANCED PRICE LABEL INPUTS ===
-showPriceLabels = input.bool(true, "💎 Show Enhanced Price Labels")
-labelPosition = input.string("End of Line", "📍 Label Position", options=["End of Line", "Right Edge", "Both"])
+indicator("GOAT Scalps Alpha", overlay=true, max_lines_count=100, max_labels_count=200, max_boxes_count=50)
 
-[pdo, pdh, pdl, pdt] = request.security(syminfo.tickerid, "D", [open[1], high[1], low[1], time[1]])
 
-// === PARSE SETUPS ===
-setups = str.split(scalpString, ";")
+// CONFIGURATION maro maro final final
 
+
+var string CONFIG_GROUP = "⚙️ Configuration"
+var string SETUPS_GROUP = "📋 Daily Setups"
+var string VISUAL_GROUP = "🎨 Visual Design"
+var string SESSION_GROUP = "⏰ Session Settings"
+var string TOGGLE_GROUP = "🔘 Feature Toggles"
+
+// === WEEKLY DEFAULT SETUPS (Updated by Discord Bot) ===
+// Format: "TICKER|Breakout|p1,p2,p3;TICKER|Breakdown|p1,p2,p3"
+defaultSetupsMonday = "SPY|Breakdown|683.11,682.4,681.2,680.4;SPY|Breakout|685.66,686.4,687,688;TSLA|Breakdown|443.44,442.5,441,439.5;TSLA|Breakout|445.88,446.6,448,450;NVDA|Breakdown|190.89,190.4,189.4,188.8;NVDA|Breakout|191.86,192.4,192.8,193.2"
+defaultSetupsTuesday = ""
+defaultSetupsWednesday = ""
+defaultSetupsThursday = ""
+defaultSetupsFriday = ""
+
+// === DAY SELECTION ===
+selectedDay = input.string("Mon", title="📆 Select Day", options=["Mon", "Tue", "Wed", "Thu", "Fri"], group=CONFIG_GROUP)
+showAllTickers = input.bool(false, "🗂️ Show All Tickers", tooltip="If off, only show levels for current chart", group=CONFIG_GROUP)
+
+// === DAILY SETUPS (Bot fills defaults, you can edit/override) ===
+mondaySetups = input.string(defaultSetupsMonday, title="Monday Setups", group=SETUPS_GROUP, tooltip="Format: TICKER|Breakout|p1,p2;TICKER|Breakdown|p1,p2")
+tuesdaySetups = input.string(defaultSetupsTuesday, title="Tuesday Setups", group=SETUPS_GROUP)
+wednesdaySetups = input.string(defaultSetupsWednesday, title="Wednesday Setups", group=SETUPS_GROUP)
+thursdaySetups = input.string(defaultSetupsThursday, title="Thursday Setups", group=SETUPS_GROUP)
+fridaySetups = input.string(defaultSetupsFriday, title="Friday Setups", group=SETUPS_GROUP)
+
+// Get the appropriate setups string based on selected day
+scalpString = switch selectedDay
+    "Mon" => mondaySetups
+    "Tue" => tuesdaySetups
+    "Wed" => wednesdaySetups
+    "Thu" => thursdaySetups
+    "Fri" => fridaySetups
+    => ""
+
+// Visual Style Options
+visualTheme = input.string("Modern Dark", "Theme", options=["Modern Dark", "Professional Light", "High Contrast", "Minimalist"], group=VISUAL_GROUP)
+lineStyle = input.string("Dynamic", "Line Style", options=["Dynamic", "Solid", "Dashed", "Dotted"], group=VISUAL_GROUP, tooltip="Dynamic adjusts based on distance from price")
+enableSmartFade = input.bool(true, "✨ Smart Fade (Distant Levels)", group=VISUAL_GROUP)
+maxVisibleLevels = input.int(6, "Max Visible Levels", minval=2, maxval=20, group=VISUAL_GROUP)
+
+// Session Settings
+sessionStartHour = input.int(9, "Signal Window Start Hour", minval=0, maxval=23, group=SESSION_GROUP)
+sessionStartMin = input.int(30, "Signal Window Start Minute", minval=0, maxval=59, group=SESSION_GROUP)
+sessionEndHour = input.int(11, "Signal Window End Hour", minval=0, maxval=23, group=SESSION_GROUP)
+sessionEndMin = input.int(30, "Signal Window End Minute", minval=0, maxval=59, group=SESSION_GROUP)
+outsideSessionTransparency = input.int(70, "Outside Session Transparency", minval=0, maxval=100, group=SESSION_GROUP)
+
+// Feature Toggles
+showTargets = input.bool(true, "🎯 Show Target Levels", group=TOGGLE_GROUP)
+showContinuationDots = input.bool(true, "🔵 Show Continuation Dots", group=TOGGLE_GROUP)
+showWickRejection = input.bool(true, "⚠️ Show Wick Rejections", group=TOGGLE_GROUP)
+
+
+// THEME COLORS
+
+
+[colorBreakout, colorBreakdown, colorBuy, colorSell, colorAccent, colorWarning] = switch visualTheme
+    "Modern Dark" => [color.new(#00FF00, 0), color.new(#FF6B35, 0), color.new(#10B981, 0), color.new(#EF4444, 0), color.new(#8B5CF6, 0), color.new(#FBBF24, 0)]
+    "Professional Light" => [color.new(#059669, 0), color.new(#DC2626, 0), color.new(#059669, 0), color.new(#DC2626, 0), color.new(#7C3AED, 0), color.new(#D97706, 0)]
+    "High Contrast" => [color.new(#00FF00, 0), color.new(#FF0000, 0), color.new(#00FF00, 0), color.new(#FF0000, 0), color.new(#FF00FF, 0), color.new(#FFFF00, 0)]
+    => [color.new(#64748B, 0), color.new(#64748B, 0), color.new(#334155, 0), color.new(#334155, 0), color.new(#475569, 0), color.new(#94A3B8, 0)]
+
+
+// HELPER FUNCTIONS
+
+
+// Parse setup string into components
 splitLine(line) =>
     parts = str.split(line, "|")
     ticker = array.size(parts) > 0 ? array.get(parts, 0) : ""
@@ -23,6 +83,7 @@ splitLine(line) =>
     levelsStr = array.size(parts) > 2 ? array.get(parts, 2) : ""
     [ticker, setupType, levelsStr]
 
+// Parse comma-separated floats
 parseFloats(strList) =>
     raw = str.split(strList, ",")
     out = array.new_float()
@@ -32,89 +93,2366 @@ parseFloats(strList) =>
             array.push(out, val)
     out
 
-// === AVG VOLUME ===
-avgVol = ta.sma(volume, 20)
+// Check if current time is within trading session
+isWithinSession() =>
+    h = hour(time, "America/New_York")
+    m = minute(time, "America/New_York")
+    currentMins = h * 60 + m
+    startMins = sessionStartHour * 60 + sessionStartMin
+    endMins = sessionEndHour * 60 + sessionEndMin
+    currentMins >= startMins and currentMins <= endMins
 
-// === STATE ===
-var bool breakoutSignal = false
-var bool rejectionSignal = false
-var bool weakBreakout = false
-var bool weakRejection = false
-var float breakoutPrice = na
-var float rejectionPrice = na
-var int labelCounter = 0
+// Check if market is open (after 9:30 AM ET)
+isMarketOpen() =>
+    h = hour(time, "America/New_York")
+    m = minute(time, "America/New_York")
+    h > 9 or (h == 9 and m >= 30)
+
+// Distance-based styling
+getDistanceFromPrice(levelPrice) =>
+    math.abs(close - levelPrice)
+
+getLineTransparency(distance, avgPrice) =>
+    if not enableSmartFade
+        0
+    else
+        percentDistance = (distance / avgPrice) * 100
+        if percentDistance < 0.5
+            0
+        else if percentDistance < 1.0
+            20
+        else if percentDistance < 2.0
+            40
+        else if percentDistance < 3.0
+            60
+        else
+            80
+
+getLineWidth(distance, avgPrice) =>
+    percentDistance = (distance / avgPrice) * 100
+    if percentDistance < 0.5
+        3
+    else if percentDistance < 1.0
+        2
+    else
+        1
+
+
+// STATE STORAGE
+
+
+var string[] levelKeys = array.new_string()
+var label[] lastBuyLabel = array.new<label>()
+var label[] lastSellLabel = array.new<label>()
+var int[] lastSignalBar = array.new<int>()
+var float[] signalEntryPrice = array.new_float()
+var float[] signalT1Price = array.new_float()
+var string[] signalDirection = array.new_string()
+var bool[] t1Achieved = array.new_bool()
+var label[] t1Labels = array.new<label>()
+
+// Continuation dot tracking
+var string continuationDirection = ""  // "long" or "short" or "" (none)
+var int continuationSignalBar = na  // bar index of the signal
+var float continuationTrackPrice = na  // highest high (long) or lowest low (short) from signal bar to last dot bar
+var label[] continuationDotLabels = array.new<label>()  // store dot labels so they can be deleted on failed trade
+
+// Track signal and full move for wick rejection exclusion
+var bool signalThisBar = false
+var bool fullMoveAchievedThisBar = false
+
+// Wick rejection labels array (to delete when new signal appears)
+var label[] wickRejectionLabels = array.new<label>()
+
+// Level visualization arrays
 var line[] levelLines = array.new<line>()
+var label[] levelLabels = array.new<label>()
 
-// === DRAW/UPDATE LINES ON LAST BAR ===
+// Level data arrays for dashboard
+var float[] allLevelsData = array.new<float>()
+var string[] allLevelsType = array.new<string>()
+var string[] allLevelsTicker = array.new<string>()
+var int[] allLevelsIndex = array.new<int>()
+var int[] sortedIndices = array.new<int>()
+
+// Track last signal type for continuation dots
+var string lastSignalType = ""
+
+
+// STATE MANAGEMENT
+
+
+getIndex(key) =>
+    idx = array.indexof(levelKeys, key)
+    if idx == -1
+        array.push(levelKeys, key)
+        array.push(lastBuyLabel, na)
+        array.push(lastSellLabel, na)
+        array.push(lastSignalBar, na)
+        array.push(signalEntryPrice, na)
+        array.push(signalT1Price, na)
+        array.push(signalDirection, "")
+        array.push(t1Achieved, false)
+        array.size(levelKeys) - 1
+    else
+        idx
+
+
+// PARSE SETUPS
+
+
+setups = str.split(scalpString, ";")
+
+
+// TIME ZONE HELPERS
+
+
+getBarTimeMinutes() =>
+    h = hour(time, "America/New_York")
+    m = minute(time, "America/New_York")
+    h * 60 + m
+
+isNewDay() =>
+    dayofmonth(time, "America/New_York") != dayofmonth(time[1], "America/New_York")
+
+
+// SIGNAL GENERATION (NON-REPAINTING, CLOSE-BASED)
+
+
+// Collect ALL levels from all setups into a single sorted array for T1 lookup
+var float[] allLevelsForT1 = array.new_float()
+
+// Store entry levels for each signal (needed for invalidation check)
+var float[] signalEntryLevel = array.new_float()
+
+// Check if current bar has wick rejection at any level
+isWickRejectionBar() =>
+    if not showWickRejection
+        false
+    else
+        bodySize = math.abs(close - open)
+        upperWick = high - math.max(open, close)
+        lowerWick = math.min(open, close) - low
+        wickThreshold = bodySize * 0.38
+        hasRejection = false
+        
+        for i = 0 to array.size(setups) - 1
+            if hasRejection
+                break
+            lineRaw = array.get(setups, i)
+            [ticker, setupType, levelsStr] = splitLine(lineRaw)
+            if showAllTickers or str.upper(ticker) == str.upper(syminfo.ticker)
+                levels = parseFloats(levelsStr)
+                for j = 0 to array.size(levels) - 1
+                    lv = array.get(levels, j)
+                    // BUY Rejection check
+                    if high > lv and math.max(open, close) <= lv and upperWick > wickThreshold
+                        hasRejection := true
+                        break
+                    // SELL Rejection check
+                    if low < lv and math.min(open, close) >= lv and lowerWick > wickThreshold
+                        hasRejection := true
+                        break
+        hasRejection
+
+// Track if this bar is a wick rejection bar
+var bool isWickRejection = false
+
+if barstate.isconfirmed and isMarketOpen()
+    // Check for wick rejection first (has priority)
+    isWickRejection := isWickRejectionBar()
+    
+    // Build sorted array of all levels for T1 calculation
+    array.clear(allLevelsForT1)
+    for i = 0 to array.size(setups) - 1
+        lineRaw = array.get(setups, i)
+        [ticker, setupType, levelsStr] = splitLine(lineRaw)
+        if showAllTickers or str.upper(ticker) == str.upper(syminfo.ticker)
+            levels = parseFloats(levelsStr)
+            for j = 0 to array.size(levels) - 1
+                lv = array.get(levels, j)
+                // Avoid duplicates
+                if array.indexof(allLevelsForT1, lv) == -1
+                    array.push(allLevelsForT1, lv)
+    
+    // Sort all levels ascending
+    if array.size(allLevelsForT1) > 1
+        array.sort(allLevelsForT1, order.ascending)
+    
+    withinSession = isWithinSession()
+    signalTransparency = withinSession ? 0 : outsideSessionTransparency
+    
+    // Reset tracking variables for this bar
+    signalThisBar := false
+    fullMoveAchievedThisBar := false
+    
+    // === STANDALONE FULL MOVE DETECTION (for bars that cross multiple levels without prior signal) ===
+    // If a bar's body crosses through a level AND reaches 80% to next level, show star
+    // This catches cases where no prior signal exists OR bar is a wick rejection
+    if array.size(allLevelsForT1) >= 2
+        // Check for upward moves (body crosses above a level, high reaches 80% to next level)
+        for lvIdx = 0 to array.size(allLevelsForT1) - 2
+            if fullMoveAchievedThisBar
+                break
+            entryLevel = array.get(allLevelsForT1, lvIdx)
+            nextLevel = array.get(allLevelsForT1, lvIdx + 1)
+            
+            // Body crosses upward through entryLevel: open <= level, close > level
+            if open <= entryLevel and close > entryLevel
+                target80 = entryLevel + (nextLevel - entryLevel) * 0.80
+                if high >= target80
+                    // Standalone full move achieved!
+                    t1Lab = label.new(bar_index, high + 0.2, "⭐", style=label.style_none, yloc=yloc.price, textcolor=colorAccent, size=size.normal, tooltip="Standalone Full Move: " + str.tostring(entryLevel, "#.##") + " → " + str.tostring(nextLevel, "#.##"))
+                    array.push(t1Labels, t1Lab)
+                    fullMoveAchievedThisBar := true
+                    
+                    // Set t1Achieved for the ENTRY level to avoid duplicate stars from signals on this bar
+                    // Find the ticker for this level and set t1Achieved
+                    for si = 0 to array.size(setups) - 1
+                        setupLine = array.get(setups, si)
+                        [sTicker, sType, sLevels] = splitLine(setupLine)
+                        if showAllTickers or str.upper(sTicker) == str.upper(syminfo.ticker)
+                            parsedLevels = parseFloats(sLevels)
+                            if array.indexof(parsedLevels, entryLevel) != -1
+                                entryLevelKey = sTicker + "_" + str.tostring(entryLevel)
+                                entryIdx = getIndex(entryLevelKey)
+                                array.set(t1Achieved, entryIdx, true)
+                                break
+                    break  // Only one star per bar
+        
+        // Check for downward moves (body crosses below a level, low reaches 80% to next level)
+        if not fullMoveAchievedThisBar
+            for lvIdx = 1 to array.size(allLevelsForT1) - 1
+                if fullMoveAchievedThisBar
+                    break
+                entryLevel = array.get(allLevelsForT1, lvIdx)
+                nextLevel = array.get(allLevelsForT1, lvIdx - 1)
+                
+                // Body crosses downward through entryLevel: open >= level, close < level
+                if open >= entryLevel and close < entryLevel
+                    target80 = entryLevel - (entryLevel - nextLevel) * 0.80
+                    if low <= target80
+                        // Standalone full move achieved!
+                        t1Lab = label.new(bar_index, low - 0.2, "⭐", style=label.style_none, yloc=yloc.price, textcolor=colorAccent, size=size.normal, tooltip="Standalone Full Move: " + str.tostring(entryLevel, "#.##") + " → " + str.tostring(nextLevel, "#.##"))
+                        array.push(t1Labels, t1Lab)
+                        fullMoveAchievedThisBar := true
+                        
+                        // Set t1Achieved for the ENTRY level to avoid duplicate stars from signals on this bar
+                        // Find the ticker for this level and set t1Achieved
+                        for si = 0 to array.size(setups) - 1
+                            setupLine = array.get(setups, si)
+                            [sTicker, sType, sLevels] = splitLine(setupLine)
+                            if showAllTickers or str.upper(sTicker) == str.upper(syminfo.ticker)
+                                parsedLevels = parseFloats(sLevels)
+                                if array.indexof(parsedLevels, entryLevel) != -1
+                                    entryLevelKey = sTicker + "_" + str.tostring(entryLevel)
+                                    entryIdx = getIndex(entryLevelKey)
+                                    array.set(t1Achieved, entryIdx, true)
+                                    break
+                        break  // Only one star per bar
+    
+    // Track if we already signaled this bar (only first level cross)
+    var bool signalTriggeredThisBar = false
+    signalTriggeredThisBar := false
+    
+    for i = 0 to array.size(setups) - 1
+        if signalTriggeredThisBar
+            break
+            
+        lineRaw = array.get(setups, i)
+        [ticker, setupType, levelsStr] = splitLine(lineRaw)
+        
+        if showAllTickers or str.upper(ticker) == str.upper(syminfo.ticker)
+            levels = parseFloats(levelsStr)
+            if array.size(levels) < 1
+                continue
+            
+            for j = 0 to array.size(levels) - 1
+                if signalTriggeredThisBar
+                    break
+                    
+                currentLevel = array.get(levels, j)
+                levelKey = ticker + "_" + str.tostring(currentLevel)
+                idx = getIndex(levelKey)
+                
+                // Ensure signalEntryLevel array is large enough
+                while array.size(signalEntryLevel) <= idx
+                    array.push(signalEntryLevel, na)
+                
+                // Get current state
+                currentSignalBar = array.get(lastSignalBar, idx)
+                currentDirection = array.get(signalDirection, idx)
+                currentEntry = array.get(signalEntryPrice, idx)
+                currentT1 = array.get(signalT1Price, idx)
+                isT1Done = array.get(t1Achieved, idx)
+                currentEntryLevel = array.get(signalEntryLevel, idx)
+                
+                // Check for active trade management
+                if not na(currentSignalBar) and not isT1Done
+                    
+                    // Check T1 completion (80% of move) - only if T1 exists
+                    if not na(currentT1)
+                        target80 = currentDirection == "long" ? currentEntry + (currentT1 - currentEntry) * 0.80 : currentEntry - (currentEntry - currentT1) * 0.80
+                        
+                        // Check T1 completion (80% of move) - triggers when high/low reaches target
+                        if currentDirection == "long" and high >= target80
+                            array.set(t1Achieved, idx, true)
+                            fullMoveAchievedThisBar := true
+                            // Star at top of candle for up moves
+                            t1Lab = label.new(bar_index, high + 0.2, "⭐", style=label.style_none, yloc=yloc.price, textcolor=colorAccent, size=size.normal, tooltip="T1 Complete: " + str.tostring(target80, "#.##"))
+                            array.push(t1Labels, t1Lab)
+                            
+                            // Stop continuation dots after full move - clear arrays WITHOUT deleting labels (keep them permanent)
+                            array.clear(continuationDotLabels)
+                            continuationDirection := ""
+                            continuationTrackPrice := na
+                            continuationSignalBar := na
+                            
+                        else if currentDirection == "short" and low <= target80
+                            array.set(t1Achieved, idx, true)
+                            fullMoveAchievedThisBar := true
+                            // Star at bottom of candle for down moves
+                            t1Lab = label.new(bar_index, low - 0.2, "⭐", style=label.style_none, yloc=yloc.price, textcolor=colorAccent, size=size.normal, tooltip="T1 Complete: " + str.tostring(target80, "#.##"))
+                            array.push(t1Labels, t1Lab)
+                            
+                            // Stop continuation dots after full move - clear arrays WITHOUT deleting labels (keep them permanent)
+                            array.clear(continuationDotLabels)
+                            continuationDirection := ""
+                            continuationTrackPrice := na
+                            continuationSignalBar := na
+                    
+                    // Check for failed trade (price body crosses back through entry level)
+                    // If T1 not achieved, silently delete the signal
+                    if not isT1Done and not na(currentEntryLevel)
+                        if currentDirection == "long" and open < currentEntryLevel and close < currentEntryLevel
+                            // Delete BUY label silently
+                            prevBuyLab = array.get(lastBuyLabel, idx)
+                            if not na(prevBuyLab)
+                                label.delete(prevBuyLab)
+                            array.set(lastBuyLabel, idx, na)
+                            array.set(lastSignalBar, idx, na)
+                            array.set(signalDirection, idx, "")
+                            array.set(signalEntryPrice, idx, na)
+                            array.set(signalT1Price, idx, na)
+                            array.set(signalEntryLevel, idx, na)
+                            
+                            // Delete all continuation dots from this failed trade
+                            if array.size(continuationDotLabels) > 0
+                                for dotIdx = 0 to array.size(continuationDotLabels) - 1
+                                    dotLab = array.get(continuationDotLabels, dotIdx)
+                                    if not na(dotLab)
+                                        label.delete(dotLab)
+                                array.clear(continuationDotLabels)
+                            
+                            // Stop continuation dots on failed trade
+                            continuationDirection := ""
+                            continuationTrackPrice := na
+                            continuationSignalBar := na
+                            
+                        else if currentDirection == "short" and open > currentEntryLevel and close > currentEntryLevel
+                            // Delete SELL label silently
+                            prevSellLab = array.get(lastSellLabel, idx)
+                            if not na(prevSellLab)
+                                label.delete(prevSellLab)
+                            array.set(lastSellLabel, idx, na)
+                            array.set(lastSignalBar, idx, na)
+                            array.set(signalDirection, idx, "")
+                            array.set(signalEntryPrice, idx, na)
+                            array.set(signalT1Price, idx, na)
+                            array.set(signalEntryLevel, idx, na)
+                            
+                            // Delete all continuation dots from this failed trade
+                            if array.size(continuationDotLabels) > 0
+                                for dotIdx = 0 to array.size(continuationDotLabels) - 1
+                                    dotLab = array.get(continuationDotLabels, dotIdx)
+                                    if not na(dotLab)
+                                        label.delete(dotLab)
+                                array.clear(continuationDotLabels)
+                            
+                            // Stop continuation dots on failed trade
+                            continuationDirection := ""
+                            continuationTrackPrice := na
+                            continuationSignalBar := na
+                
+                // === BUY SIGNAL ===
+                // Conditions: open below/at level, close above level (body crosses through upward)
+                // Skip if this is a wick rejection bar
+                buySignal = open <= currentLevel and close > currentLevel and not isWickRejection
+                
+                if buySignal
+                    signalTriggeredThisBar := true
+                    signalThisBar := true
+                    
+                    // Find T1: next higher level
+                    t1Level = float(na)
+                    levelIdx = array.indexof(allLevelsForT1, currentLevel)
+                    if levelIdx != -1 and levelIdx < array.size(allLevelsForT1) - 1
+                        t1Level := array.get(allLevelsForT1, levelIdx + 1)
+                    
+                    // Clear any previous labels for this level (always delete now)
+                    prevBuyLab = array.get(lastBuyLabel, idx)
+                    prevSellLab = array.get(lastSellLabel, idx)
+                    if not na(prevBuyLab)
+                        label.delete(prevBuyLab)
+                    if not na(prevSellLab)
+                        label.delete(prevSellLab)
+                    
+                    // Delete all previous wick rejection labels
+                    if array.size(wickRejectionLabels) > 0
+                        for wIdx = 0 to array.size(wickRejectionLabels) - 1
+                            wLab = array.get(wickRejectionLabels, wIdx)
+                            if not na(wLab)
+                                label.delete(wLab)
+                        array.clear(wickRejectionLabels)
+                    
+                    labelColor = color.new(colorBuy, signalTransparency)
+                    tooltipText = "Entry: " + str.tostring(currentLevel, "#.##")
+                    if not na(t1Level)
+                        tooltipText := tooltipText + " | T1: " + str.tostring(t1Level, "#.##")
+                    
+                    bLab = label.new(bar_index, low, "BUY", style=label.style_label_up, yloc=yloc.price, color=labelColor, textcolor=color.white, size=size.tiny, tooltip=tooltipText)
+                    
+                    array.set(lastBuyLabel, idx, bLab)
+                    array.set(lastSellLabel, idx, na)
+                    array.set(lastSignalBar, idx, bar_index)
+                    array.set(signalEntryPrice, idx, currentLevel)
+                    array.set(signalT1Price, idx, t1Level)
+                    array.set(signalDirection, idx, "long")
+                    array.set(t1Achieved, idx, false)
+                    array.set(signalEntryLevel, idx, currentLevel)
+                    
+                    // Clear previous continuation dots and reset tracking for BUY
+                    if array.size(continuationDotLabels) > 0
+                        for dotIdx = 0 to array.size(continuationDotLabels) - 1
+                            dotLab = array.get(continuationDotLabels, dotIdx)
+                            if not na(dotLab)
+                                label.delete(dotLab)
+                        array.clear(continuationDotLabels)
+                    continuationDirection := "long"
+                    continuationSignalBar := bar_index  // store signal bar index
+                    continuationTrackPrice := high   // start with signal bar's high
+                    
+                    lastSignalType := "buy"
+                
+                // === SELL SIGNAL ===
+                // Conditions: open above/at level, close below level (body crosses through downward)
+                // Skip if this is a wick rejection bar
+                sellSignal = open >= currentLevel and close < currentLevel and not isWickRejection
+                
+                if sellSignal
+                    signalTriggeredThisBar := true
+                    signalThisBar := true
+                    
+                    // Find T1: next lower level
+                    t1Level = float(na)
+                    levelIdx = array.indexof(allLevelsForT1, currentLevel)
+                    if levelIdx != -1 and levelIdx > 0
+                        t1Level := array.get(allLevelsForT1, levelIdx - 1)
+                    
+                    // Clear any previous labels for this level (always delete now)
+                    prevBuyLab = array.get(lastBuyLabel, idx)
+                    prevSellLab = array.get(lastSellLabel, idx)
+                    if not na(prevBuyLab)
+                        label.delete(prevBuyLab)
+                    if not na(prevSellLab)
+                        label.delete(prevSellLab)
+                    
+                    // Delete all previous wick rejection labels
+                    if array.size(wickRejectionLabels) > 0
+                        for wIdx = 0 to array.size(wickRejectionLabels) - 1
+                            wLab = array.get(wickRejectionLabels, wIdx)
+                            if not na(wLab)
+                                label.delete(wLab)
+                        array.clear(wickRejectionLabels)
+                    
+                    labelColor = color.new(colorSell, signalTransparency)
+                    tooltipText = "Entry: " + str.tostring(currentLevel, "#.##")
+                    if not na(t1Level)
+                        tooltipText := tooltipText + " | T1: " + str.tostring(t1Level, "#.##")
+                    
+                    sLab = label.new(bar_index, high, "SELL", style=label.style_label_down, yloc=yloc.price, color=labelColor, textcolor=color.white, size=size.tiny, tooltip=tooltipText)
+                    
+                    array.set(lastSellLabel, idx, sLab)
+                    array.set(lastBuyLabel, idx, na)
+                    array.set(lastSignalBar, idx, bar_index)
+                    array.set(signalEntryPrice, idx, currentLevel)
+                    array.set(signalT1Price, idx, t1Level)
+                    array.set(signalDirection, idx, "short")
+                    array.set(t1Achieved, idx, false)
+                    array.set(signalEntryLevel, idx, currentLevel)
+                    
+                    // Clear previous continuation dots and reset tracking for SELL
+                    if array.size(continuationDotLabels) > 0
+                        for dotIdx = 0 to array.size(continuationDotLabels) - 1
+                            dotLab = array.get(continuationDotLabels, dotIdx)
+                            if not na(dotLab)
+                                label.delete(dotLab)
+                        array.clear(continuationDotLabels)
+                    continuationDirection := "short"
+                    continuationSignalBar := bar_index  // store signal bar index
+                    continuationTrackPrice := low   // start with signal bar's low
+                    
+                    lastSignalType := "sell"
+
+
+// CONTINUATION DOTS
+
+
+// Green Dot: After BUY signal, close > highest high from signal bar to previous bar
+if showContinuationDots and barstate.isconfirmed and continuationDirection == "long" and not na(continuationSignalBar)
+    barsBack = bar_index - continuationSignalBar
+    if barsBack > 0
+        // Update tracked highest high with previous bar's high
+        if high[1] > continuationTrackPrice
+            continuationTrackPrice := high[1]
+        
+        // Check if current close > highest high
+        if close > continuationTrackPrice
+            greenDot = label.new(bar_index, low - 0.2, "●", style=label.style_none, yloc=yloc.price, textcolor=colorBuy, size=size.normal)
+            array.push(continuationDotLabels, greenDot)
+            // Reset to current bar's high (next bar will compare to this)
+            continuationTrackPrice := high
+        else
+            // Update tracking to include current bar's high for next comparison
+            if high > continuationTrackPrice
+                continuationTrackPrice := high
+
+// Red Dot: After SELL signal, close < lowest low from signal bar to previous bar
+if showContinuationDots and barstate.isconfirmed and continuationDirection == "short" and not na(continuationSignalBar)
+    barsBack = bar_index - continuationSignalBar
+    if barsBack > 0
+        // Update tracked lowest low with previous bar's low
+        if low[1] < continuationTrackPrice
+            continuationTrackPrice := low[1]
+        
+        // Check if current close < lowest low
+        if close < continuationTrackPrice
+            redDot = label.new(bar_index, high + 0.2, "●", style=label.style_none, yloc=yloc.price, textcolor=colorSell, size=size.normal)
+            array.push(continuationDotLabels, redDot)
+            // Reset to current bar's low (next bar will compare to this)
+            continuationTrackPrice := low
+        else
+            // Update tracking to include current bar's low for next comparison
+            if low < continuationTrackPrice
+                continuationTrackPrice := low
+
+
+// WICK REJECTION WARNINGS
+
+
+if showWickRejection and barstate.isconfirmed and isMarketOpen()
+    // Calculate wick sizes and body size
+    bodySize = math.abs(close - open)
+    upperWick = high - math.max(open, close)
+    lowerWick = math.min(open, close) - low
+    wickThreshold = bodySize * 0.38
+    
+    for i = 0 to array.size(setups) - 1
+        lineRaw = array.get(setups, i)
+        [ticker, setupType, levelsStr] = splitLine(lineRaw)
+        
+        if showAllTickers or str.upper(ticker) == str.upper(syminfo.ticker)
+            levels = parseFloats(levelsStr)
+            
+            for j = 0 to array.size(levels) - 1
+                lv = array.get(levels, j)
+                
+                // BUY Rejection: upper wick crosses above level, wick > 38% of body
+                // Candle body stayed below or at level, but wick went above
+                if high > lv and math.max(open, close) <= lv and upperWick > wickThreshold
+                    wLab = label.new(bar_index, low - 0.2, "⚠️", style=label.style_none, yloc=yloc.price, textcolor=colorWarning, size=size.small, tooltip="Buy Rejection at " + str.tostring(lv, "#.##"), force_overlay=true)
+                    array.push(wickRejectionLabels, wLab)
+                
+                // SELL Rejection: lower wick crosses below level, wick > 38% of body
+                // Candle body stayed above or at level, but wick went below
+                if low < lv and math.min(open, close) >= lv and lowerWick > wickThreshold
+                    wLab = label.new(bar_index, high + 0.2, "⚠️", style=label.style_none, yloc=yloc.price, textcolor=colorWarning, size=size.small, tooltip="Sell Rejection at " + str.tostring(lv, "#.##"), force_overlay=true)
+                    array.push(wickRejectionLabels, wLab)
+
+
+// LEVEL VISUALIZATION (on last bar)
+
+
 if barstate.islast
+    // Clear previous elements
     if array.size(levelLines) > 0
         for l = 0 to array.size(levelLines) - 1
             line.delete(array.get(levelLines, l))
         array.clear(levelLines)
     
+    if array.size(levelLabels) > 0
+        for l = 0 to array.size(levelLabels) - 1
+            label.delete(array.get(levelLabels, l))
+        array.clear(levelLabels)
+    
+    // Find 9:25 AM bar for line start
+    var int marketOpenBar = bar_index
+    currentDay = dayofmonth(time, "America/New_York")
+    currentMonth = month(time, "America/New_York")
+    currentYear = year(time, "America/New_York")
+    maxLookback = math.min(bar_index, 450)
+    int targetTimeMinutes = 9 * 60 + 25
+    
+    for lookback = 0 to maxLookback
+        barDay = dayofmonth(time[lookback], "America/New_York")
+        barMonth = month(time[lookback], "America/New_York")
+        barYear = year(time[lookback], "America/New_York")
+        
+        if barDay != currentDay or barMonth != currentMonth or barYear != currentYear
+            break
+        
+        barHour = hour(time[lookback], "America/New_York")
+        barMinute = minute(time[lookback], "America/New_York")
+        barTimeMinutes = barHour * 60 + barMinute
+        int barEndMinutes = barTimeMinutes + timeframe.multiplier
+        
+        if barTimeMinutes <= targetTimeMinutes and targetTimeMinutes < barEndMinutes
+            marketOpenBar := bar_index - lookback
+            break
+    
+    // Collect all levels with metadata
+    array.clear(allLevelsData)
+    array.clear(allLevelsType)
+    array.clear(allLevelsTicker)
+    array.clear(allLevelsIndex)
+    
     if array.size(setups) > 0
         for i = 0 to array.size(setups) - 1
             lineRaw = array.get(setups, i)
             [ticker, setupType, levelsStr] = splitLine(lineRaw)
-            if str.upper(ticker) == str.upper(syminfo.ticker)
+            if showAllTickers or str.upper(ticker) == str.upper(syminfo.ticker)
                 levels = parseFloats(levelsStr)
-                if array.size(levels) > 0
-                    // For Rejection: only first level
-                    if str.contains(setupType, "Rejection")
-                        lv = array.get(levels, 0)
-                        lineColor = color.new(#ff3366, 0)
-                        newLine = line.new(bar_index - 200, lv, bar_index + 25, lv, 
-                                          xloc=xloc.bar_index, 
-                                          color=lineColor, 
-                                          style=line.style_solid, 
-                                          width=1, 
-                                          extend=extend.none)
-                        array.push(levelLines, newLine)
-                    // For others: loop through all levels
-                    else
-                        for j = 0 to array.size(levels) - 1
-                            lv = array.get(levels, j)
-                            lineColor = str.contains(setupType,"Breakout") ? color.new(#00ff88,0) : color.new(#ff8800,0)
-                            newLine = line.new(bar_index - 200, lv, bar_index + 25, lv, 
-                                              xloc=xloc.bar_index, 
-                                              color=lineColor, 
-                                              style=line.style_solid, 
-                                              width=1, 
-                                              extend=extend.none)
-                            array.push(levelLines, newLine)
-
-// === STATIC PRICE LABELS ===
-var label[] staticLabels = array.new<label>()
-
-if barstate.islast and showPriceLabels
-    if array.size(staticLabels) > 0
-        for l = 0 to array.size(staticLabels) - 1
-            label.delete(array.get(staticLabels, l))
-        array.clear(staticLabels)
-
-    for i = 0 to array.size(setups) - 1
-        lineRaw = array.get(setups, i)
-        [ticker, setupType, levelsStr] = splitLine(lineRaw)
-        if str.upper(ticker) == str.upper(syminfo.ticker)
-            levels = parseFloats(levelsStr)
-            if array.size(levels) > 0
-                // Rejection → only first level
-                if str.contains(setupType,"Rejection")
-                    lv = array.get(levels, 0)
-                    lineColor = color.new(#ff3366,0)
-                    bgColor   = color.new(lineColor, 100)
-                    emoji     = "🔻❌"
-                    labelText = emoji + " " + str.tostring(lv, "##.00")
-                    newLabel  = label.new(bar_index + 22, lv, labelText, xloc=xloc.bar_index, yloc=yloc.price, style=label.style_label_left, color=bgColor, textcolor=lineColor, size=size.huge, tooltip=str.upper(ticker)+" "+setupType+" Level: "+str.tostring(lv,"#.##"))
-                    array.push(staticLabels, newLabel)
-
-                // Breakout/Breakdown → all levels
+                levelsToShow = showTargets ? array.size(levels) : math.min(1, array.size(levels))
+                for j = 0 to levelsToShow - 1
+                    lv = array.get(levels, j)
+                    array.push(allLevelsData, lv)
+                    array.push(allLevelsType, setupType)
+                    array.push(allLevelsTicker, ticker)
+                    array.push(allLevelsIndex, j + 1)  // Level number (1, 2, 3, 4...)
+    
+    // Sort levels by distance from current price
+    array.clear(sortedIndices)
+    for i = 0 to array.size(allLevelsData) - 1
+        array.push(sortedIndices, i)
+    
+    // Bubble sort by distance
+    if array.size(allLevelsData) > 0
+        for i = 0 to array.size(allLevelsData) - 2
+            for j = 0 to array.size(allLevelsData) - 2 - i
+                idx1 = array.get(sortedIndices, j)
+                idx2 = array.get(sortedIndices, j + 1)
+                dist1 = getDistanceFromPrice(array.get(allLevelsData, idx1))
+                dist2 = getDistanceFromPrice(array.get(allLevelsData, idx2))
+                if dist1 > dist2
+                    array.set(sortedIndices, j, idx2)
+                    array.set(sortedIndices, j + 1, idx1)
+    
+    // Find the two levels surrounding current price (for Dynamic line style)
+    float closestAbove = na
+    float closestBelow = na
+    for i = 0 to array.size(allLevelsData) - 1
+        lv = array.get(allLevelsData, i)
+        if lv >= close
+            if na(closestAbove) or lv < closestAbove
+                closestAbove := lv
+        if lv <= close
+            if na(closestBelow) or lv > closestBelow
+                closestBelow := lv
+    
+    // Draw closest levels
+    levelsDrawn = 0
+    for i = 0 to array.size(sortedIndices) - 1
+        if levelsDrawn >= maxVisibleLevels
+            break
+        
+        idx = array.get(sortedIndices, i)
+        lv = array.get(allLevelsData, idx)
+        setupType = array.get(allLevelsType, idx)
+        ticker = array.get(allLevelsTicker, idx)
+        levelNum = array.get(allLevelsIndex, idx)
+        
+        isBreakout = str.contains(setupType, "Breakout")
+        distance = getDistanceFromPrice(lv)
+        transparency = getLineTransparency(distance, close)
+        lineWidth = getLineWidth(distance, close)
+        
+        baseColor = isBreakout ? colorBreakout : colorBreakdown
+        lineColor = color.new(baseColor, transparency)
+        
+        // Determine line style
+        actualLineStyle = line.style_solid
+        if lineStyle == "Dashed"
+            actualLineStyle := line.style_dashed
+        else if lineStyle == "Dotted"
+            actualLineStyle := line.style_dotted
+        else if lineStyle == "Dynamic"
+            // Only the two levels surrounding current price are solid
+            isSurroundingLevel = (not na(closestAbove) and lv == closestAbove) or (not na(closestBelow) and lv == closestBelow)
+            if isSurroundingLevel
+                actualLineStyle := line.style_solid
+            else
+                // Distance-based style for other levels
+                percentDist = (distance / close) * 100
+                if percentDist < 1.5
+                    actualLineStyle := line.style_dashed
                 else
-                    for j = 0 to array.size(levels) - 1
-                        lv = array.get(levels, j)
-                        lineColor = str.contains(setupType,"Breakout") ? color.new(#00ff88,0) : color.new(#ff8800,0)
-                        bgColor   = color.new(lineColor, 100)
-                        emoji     = str.contains(setupType,"Breakout") ? "🔼" : "🔻"
-                        labelText = emoji + " " + str.tostring(lv, "##.00")
-                        newLabel  = label.new(bar_index + 22, lv, labelText, xloc=xloc.bar_index, yloc=yloc.price, style=label.style_label_left, color=bgColor, textcolor=lineColor, size=size.huge, tooltip=str.upper(ticker)+" "+setupType+" Level: "+str.tostring(lv,"#.##"))
-                        array.push(staticLabels, newLabel)
+                    actualLineStyle := line.style_dotted
+        
+        // Draw line
+        newLine = line.new(marketOpenBar, lv, bar_index + 10, lv, xloc=xloc.bar_index, color=lineColor, style=actualLineStyle, width=lineWidth, extend=extend.none)
+        array.push(levelLines, newLine)
+        
+        // Draw price label with arrow
+        arrowEmoji = isBreakout ? "🔼 " : "🔻 "
+        priceText = arrowEmoji + str.tostring(lv, "#.00")
+        labelBgColor = color.new(baseColor, 85)
+        labelTextColor = color.new(baseColor, 0)
+        
+        // Price label
+        priceLabel = label.new(bar_index + 12, lv, priceText, xloc=xloc.bar_index, yloc=yloc.price, style=label.style_label_left, color=labelBgColor, textcolor=labelTextColor, size=size.normal, tooltip=str.upper(ticker) + " " + setupType + " T" + str.tostring(levelNum))
+        array.push(levelLabels, priceLabel)
+        
+        levelsDrawn += 1
+    
+//Scalp levels End
+
+//@version=5
+//Dashboard Start
+//indicator("A+ Scalp Dashboard", overlay=true, max_labels_count=500, max_lines_count=500, max_boxes_count=500)
+
+
+// INPUTS
+
+
+// ORB Settings
+orb5_enabled = input.bool(false, "ORB5", group="Opening Range Breaks")
+orb15_enabled = input.bool(false, "ORB15", group="Opening Range Breaks")
+orb30_enabled = input.bool(false, "ORB30", group="Opening Range Breaks")
+orb60_enabled = input.bool(false, "ORB60", group="Opening Range Breaks")
+
+// Session Settings
+rth_start = input.session("0930-1600", "RTH Session", group="Session Settings")
+premarket_start = input.session("0400-0930", "Pre-Market Session", group="Session Settings")
+
+// Indicator Settings
+atr_length = input.int(20, "ATR Length", minval=1, group="Indicators")
+vwap_enabled = input.bool(false, "Show VWAP", group="Indicators")
+ema9_enabled = input.bool(false, "Show 9 EMA", group="Indicators")
+ema20_enabled = input.bool(false, "Show 20 EMA", group="Indicators")
+ema200_enabled = input.bool(false, "Show 200 EMA", group="Indicators")
+pm_lines_enabled = input.bool(false, "Show Pre-Market Lines", group="Indicators")
+pd_lines_enabled = input.bool(false, "Show Previous Day Lines", group="Indicators")
+
+// Signal Settings
+show_signals = input.bool(false, "Show Buy/Sell Signals", group="Signals")
+show_signal_labels = input.bool(false, "Show Signal Labels", group="Signals")
+tp1_percent = input.float(0.3, "TP1 %", step=0.1, group="Signals")
+tp2_percent = input.float(0.6, "TP2 %", step=0.1, group="Signals")
+sl_percent = input.float(1.0, "Stop Loss %", step=0.1, group="Signals")
+
+// Label Positioning
+label_offset = input.int(10, "Label Distance (bars)", minval=5, maxval=50, group="Signals", tooltip="Distance labels appear from signal bar to avoid candle overlap")
+show_line_labels = input.bool(false, "Show Line Name Labels", group="Signals", tooltip="Display price and name labels for all lines on the right side of chart")
+
+// Dashboard Settings
+show_dashboard = input.bool(true, "Show Dashboard", group="Dashboard")
+dashboard_position = input.string("bottom_left", "Dashboard Position", options=["top_left", "top_right", "bottom_left", "bottom_right"], group="Dashboard")
+publication_date = input.string("Jan 05, 2026", "Publication Date", group="Dashboard", tooltip="Manually set the indicator publication date shown in dashboard header")
+
+
+// SESSION DETECTION
+
+
+in_session = not na(time(timeframe.period, rth_start))
+in_premarket = not na(time(timeframe.period, premarket_start))
+
+// New trading day detection (for proper daily resets)
+var int last_trading_day = 0
+int current_trading_day = dayofmonth
+bool new_trading_day = current_trading_day != last_trading_day
+
+if new_trading_day
+    last_trading_day := current_trading_day
+
+// New RTH session detection (9:30 AM)
+new_session = in_session and not in_session[1]
+
+
+// OPENING RANGE CALCULATION
+
+
+var float or5_high = na
+var float or5_low = na
+var float or15_high = na
+var float or15_low = na
+var float or30_high = na
+var float or30_low = na
+var float or60_high = na
+var float or60_low = na
+
+// Completion flags
+var bool or5_complete = false
+var bool or15_complete = false
+var bool or30_complete = false
+var bool or60_complete = false
+
+// Time-based tracking (in minutes since RTH open)
+var int minutes_since_open = 0
+var float session_high = na
+var float session_low = na
+
+// Reset everything at start of NEW TRADING DAY
+if new_trading_day
+    session_high := na
+    session_low := na
+    or5_high := na
+    or5_low := na
+    or15_high := na
+    or15_low := na
+    or30_high := na
+    or30_low := na
+    or60_high := na
+    or60_low := na
+    // Reset completion flags
+    or5_complete := false
+    or15_complete := false
+    or30_complete := false
+    or60_complete := false
+    minutes_since_open := 0
+
+// Initialize session tracking at RTH open (9:30 AM)
+if new_session
+    session_high := high
+    session_low := low
+    minutes_since_open := 0
+
+// Time-based ORB calculation
+if in_session
+    // Calculate minutes elapsed since 9:30 AM
+    minutes_since_open := math.round((time - timestamp(year, month, dayofmonth, 9, 30, 0)) / 60000)
+    
+    // Update session high/low
+    session_high := math.max(session_high, high)
+    session_low := math.min(session_low, low)
+    
+    // ORB5 (5 minutes: 9:30-9:35 AM)
+    if minutes_since_open < 5
+        or5_high := session_high
+        or5_low := session_low
+        or5_complete := false
+    else if minutes_since_open >= 5 and not or5_complete
+        or5_complete := true
+    
+    // ORB15 (15 minutes: 9:30-9:45 AM)
+    if minutes_since_open < 15
+        or15_high := session_high
+        or15_low := session_low
+        or15_complete := false
+    else if minutes_since_open >= 15 and not or15_complete
+        or15_complete := true
+    
+    // ORB30 (30 minutes: 9:30-10:00 AM)
+    if minutes_since_open < 30
+        or30_high := session_high
+        or30_low := session_low
+        or30_complete := false
+    else if minutes_since_open >= 30 and not or30_complete
+        or30_complete := true
+    
+    // ORB60 (60 minutes: 9:30-10:30 AM)
+    if minutes_since_open < 60
+        or60_high := session_high
+        or60_low := session_low
+        or60_complete := false
+    else if minutes_since_open >= 60 and not or60_complete
+        or60_complete := true
+
+
+// PRE-MARKET RANGE
+
+
+var float pm_high = na
+var float pm_low = na
+var bool pm_captured = false
+
+// Reset pre-market tracking at start of new trading day
+if new_trading_day
+    pm_captured := false
+
+// Track pre-market range (before RTH opens)
+if in_premarket and not in_session
+    if not pm_captured
+        // First bar of pre-market for this day
+        pm_high := high
+        pm_low := low
+        pm_captured := true
+    else
+        // Update pre-market range
+        pm_high := math.max(pm_high, high)
+        pm_low := math.min(pm_low, low)
+
+
+// PREVIOUS DAY RANGE
+
+
+var float pd_high = na
+var float pd_low = na
+
+// Track daily high/low
+var float today_high = na
+var float today_low = na
+
+if new_trading_day
+    // Save yesterday's data
+    pd_high := today_high
+    pd_low := today_low
+    // Reset today's tracking
+    today_high := high
+    today_low := low
+else
+    // Update today's high/low
+    today_high := na(today_high) ? high : math.max(today_high, high)
+    today_low := na(today_low) ? low : math.min(today_low, low)
+
+
+// INDICATORS
+
+
+// VWAP
+vwap_value = ta.vwap(close)
+
+// EMAs
+ema9 = ta.ema(close, 9)
+ema20 = ta.ema(close, 20)
+ema200 = ta.ema(close, 200)
+
+// EMA Distance and Expansion/Convergence Logic (1-bar lookback)
+ema_distance = math.abs(ema9 - ema20)
+ema_distance_1bar_ago = math.abs(ema9[1] - ema20[1])
+
+// Check if EMAs are expanding (distance increasing compared to previous bar)
+ema_expanding = ema_distance > ema_distance_1bar_ago
+
+// EMA cross detection
+ema9_above_ema20 = ema9 > ema20
+ema9_below_ema20 = ema9 < ema20
+ema_bullish_cross = ta.crossover(ema9, ema20)
+ema_bearish_cross = ta.crossunder(ema9, ema20)
+
+// EMA Status Logic
+var string ema_status = "⚠️"
+var float ema_cross_price = na
+
+// Update status based on expansion/convergence
+if ema9_above_ema20
+    if ema_expanding
+        ema_status := "🔼"
+    else
+        ema_status := "⚠️"  // Converging while 9 above 20
+else if ema9_below_ema20
+    if ema_expanding
+        ema_status := "🔻"
+    else
+        ema_status := "⚠️"  // Converging while 9 below 20
+
+// Capture cross price
+if ema_bullish_cross or ema_bearish_cross
+    ema_cross_price := close
+
+// EMA Score for Active Score
+ema_score = ema_status == "🔼" or ema_status == "🔻" ? 1 : 0
+
+// 200 EMA Status (simple: above = bullish, below = bearish, NO score contribution)
+ema200_status = close >= ema200 ? "🔼" : "🔻"
+
+// 200 EMA visibility condition (±1% range with red/green logic)
+// Shows automatically when price within ±1%, regardless of setting
+ema200_upper_1pct = ema200 * 1.01  // +1%
+ema200_lower_1pct = ema200 * 0.99  // -1%
+
+// Red when price >= 200 EMA and within +1%
+show_ema200_red = close >= ema200 and close <= ema200_upper_1pct
+
+// Green when price < 200 EMA and within -1%
+show_ema200_green = close >= ema200_lower_1pct and close < ema200
+
+show_ema200 = show_ema200_red or show_ema200_green
+
+// 200 EMA Status (simple: above = bullish, below = bearish)
+
+ema200_score = 0  // Doesn't contribute to active score (long-term reference only)
+
+// ATR
+atr20 = ta.atr(atr_length)
+
+// RSI for momentum
+rsi7 = ta.rsi(close, 7)
+
+// MACD for momentum
+[macd_line, signal_line, macd_hist] = ta.macd(close, 12, 26, 9)
+
+// Volume
+avg_volume = ta.sma(volume, 20)
+rvol = avg_volume > 0 ? volume / avg_volume : 1.0
+
+
+// WEEKLY BIAS CALCULATION
+
+
+var float week_high = na
+var float week_low = na
+var float monday_close = na
+
+// New week detection (Monday)
+is_new_week = ta.change(weekofyear) != 0
+
+if is_new_week
+    week_high := high
+    week_low := low
+
+if not na(week_high)
+    week_high := math.max(week_high, high)
+    week_low := math.min(week_low, low)
+
+// Capture Monday close
+if dayofweek == dayofweek.monday and not in_session and in_session[1]
+    monday_close := close[1]
+
+// Weekly bias flags
+above_week_high = not na(week_high) and close > week_high
+below_week_low = not na(week_low) and close < week_low
+above_monday_close = not na(monday_close) and close > monday_close
+below_monday_close = not na(monday_close) and close < monday_close
+
+
+// METRIC CALCULATIONS
+
+
+// 1. RANGE METRIC (Tight/Normal/Wide)
+pm_range = not na(pm_high) and not na(pm_low) ? pm_high - pm_low : 0
+pm_pct = atr20 > 0 and pm_range > 0 ? pm_range / atr20 : 0
+
+range_status = pm_pct < 0.25 ? "🟢 Tight" : pm_pct <= 0.60 ? "🟡 Normal" : "🔴 Wide"
+
+// 2. VOLATILITY METRIC
+volatility_status = "🟡 Normal"
+
+// 3. TREND METRIC
+vwap_slope = ta.change(vwap_value, 10)
+price_above_vwap = close > vwap_value
+ema_bullish = ema9 > ema20
+
+trend_bullish = price_above_vwap and vwap_slope > 0 and ema_bullish
+trend_bearish = not price_above_vwap and vwap_slope < 0 and not ema_bullish
+
+trend_status = trend_bullish ? "📈 Bullish" : trend_bearish ? "📉 Bearish" : "➡️ Neutral"
+
+// 4. VOLUME METRIC
+volume_status = rvol < 1.0 ? "🔽 Weak" : rvol <= 2.0 ? "✅ Normal" : "🚀 Strong"
+
+// 5. MOMENTUM METRIC
+rsi_bullish = rsi7 > 55 and rsi7 < 70 and ta.rising(rsi7, 3)
+rsi_bearish = rsi7 > 30 and rsi7 < 45 and ta.falling(rsi7, 3)
+macd_bullish = macd_hist > 0 and ta.rising(macd_hist, 2)
+macd_bearish = macd_hist < 0 and ta.falling(macd_hist, 2)
+
+momentum_strong_bull = rsi_bullish and macd_bullish
+momentum_strong_bear = rsi_bearish and macd_bearish
+
+momentum_status = momentum_strong_bull ? "🚀 Bull" : momentum_strong_bear ? "💥 Bear" : "⚡ Mixed"
+
+// 6. BIAS METRIC
+bias_bullish = above_monday_close and above_week_high
+bias_bearish = below_monday_close and below_week_low
+
+bias_status = bias_bullish ? "🐂 Bull" : bias_bearish ? "🐻 Bear" : "🔄 Neutral"
+
+
+// ORB STATUS & ACTIVE SCORE
+
+
+// ORB5 Status
+orb5_status = not or5_complete ? "⏳" : close > or5_high ? "🔼" : close < or5_low ? "🔻" : "⚠️"
+orb5_score = orb5_status == "🔼" or orb5_status == "🔻" ? 1 : 0
+
+// ORB15 Status
+orb15_status = not or15_complete ? "⏳" : close > or15_high ? "🔼" : close < or15_low ? "🔻" : "⚠️"
+orb15_score = orb15_status == "🔼" or orb15_status == "🔻" ? 1 : 0
+
+// ORB30 Status
+orb30_status = not or30_complete ? "⏳" : close > or30_high ? "🔼" : close < or30_low ? "🔻" : "⚠️"
+orb30_score = orb30_status == "🔼" or orb30_status == "🔻" ? 1 : 0
+
+// ORB60 Status
+orb60_status = not or60_complete ? "⏳" : close > or60_high ? "🔼" : close < or60_low ? "🔻" : "⚠️"
+orb60_score = orb60_status == "🔼" or orb60_status == "🔻" ? 1 : 0
+
+// VWAP Status
+vwap_status = close > vwap_value * 1.001 ? "🔼" : close < vwap_value * 0.999 ? "🔻" : "⚠️"
+vwap_score = vwap_status == "🔼" or vwap_status == "🔻" ? 1 : 0
+
+// PreM Status (new zone logic: 80%-120% and -20%-20%)
+
+var float pm_80_level = na
+var float pm_20_level = na
+var float pm_120_level = na
+var float pm_minus20_level = na
+
+prem_status = "⚠️"
+prem_score = 0
+
+if pm_captured
+    pm_range := pm_high - pm_low
+    
+    // Calculate zone levels
+    pm_80_level := pm_low + (pm_range * 0.80)    // 80% of range
+    pm_20_level := pm_low + (pm_range * 0.20)    // 20% of range
+    pm_120_level := pm_low + (pm_range * 1.20)   // 120% of range (above high)
+    pm_minus20_level := pm_low + (pm_range * -0.20)  // -20% of range (below low)
+    
+    // Determine status based on price location
+    if close >= pm_80_level
+        prem_status := "🔼"
+        prem_score := 1
+    else if close <= pm_20_level
+        prem_status := "🔻"
+        prem_score := 1
+    else
+        prem_status := "⚠️"
+        prem_score := 0
+else
+    prem_status := "⏳"
+    prem_score := 0
+    pm_range := na
+    pm_80_level := na
+    pm_20_level := na
+    pm_120_level := na
+    pm_minus20_level := na
+
+// PreD Status (new zone logic: 80%-120% and -20%-20%)
+var float pd_range = na
+var float pd_80_level = na
+var float pd_20_level = na
+var float pd_120_level = na
+var float pd_minus20_level = na
+
+pred_status = "⚠️"
+pred_score = 0
+
+if not na(pd_high) and not na(pd_low)
+    pd_range := pd_high - pd_low
+    
+    // Calculate zone levels
+    pd_80_level := pd_low + (pd_range * 0.80)    // 80% of range
+    pd_20_level := pd_low + (pd_range * 0.20)    // 20% of range
+    pd_120_level := pd_low + (pd_range * 1.20)   // 120% of range (above high)
+    pd_minus20_level := pd_low + (pd_range * -0.20)  // -20% of range (below low)
+    
+    // Determine status based on price location
+    if close >= pd_80_level
+        pred_status := "🔼"
+        pred_score := 1
+    else if close <= pd_20_level
+        pred_status := "🔻"
+        pred_score := 1
+    else
+        pred_status := "⚠️"
+        pred_score := 0
+else
+    pred_status := "⏳"
+    pred_score := 0
+    pd_range := na
+    pd_80_level := na
+    pd_20_level := na
+    pd_120_level := na
+    pd_minus20_level := na
+
+// Total Active Score (0-8: ORB5, ORB15, ORB30, ORB60, VWAP, 9/20 EMA, PrevM, PrevD)
+active_score = orb5_score + orb15_score + orb30_score + orb60_score + vwap_score + ema_score + prem_score + pred_score
+
+// Check if 15, 30, 60 align (all breaking same direction)
+orb_aligned = (orb15_status == orb30_status and orb30_status == orb60_status and orb15_status != "⚠️" and orb15_status != "⏳")
+
+
+// HEADER EMOJI LOGIC
+
+
+header_emoji = "🚀"
+
+if range_status == "🔴 Wide" and volatility_status == "🔥 High"
+    header_emoji := "💣"
+else if momentum_status == "💥 Bear" and trend_status == "📉 Bearish"
+    header_emoji := "🧨"
+else if volume_status == "🔽 Weak"
+    header_emoji := "⚠️"
+else if active_score >= 5 and orb_aligned
+    header_emoji := "🚀"
+
+
+// TRADE SIGNAL LOGIC
+
+
+var float entry_price = na
+var float tp1_price = na
+var float tp2_price = na
+var float sl_price = na
+var string signal_type = ""
+var bool tp1_hit = false
+var bool tp2_hit = false
+var bool sl_hit = false
+var int signal_count = 0
+
+// ORB60 breakout signals (primary logic)
+orb60_break_up = not na(or60_high) and close > or60_high and close[1] <= or60_high
+orb60_break_down = not na(or60_low) and close < or60_low and close[1] >= or60_low
+
+// Buy signal - candle must CLOSE above the level
+buy_signal = orb60_break_up and show_signals and in_session
+
+// Sell signal - candle must CLOSE below the level
+sell_signal = orb60_break_down and show_signals and in_session
+
+// Trap detection - wick through level but no body close
+orb60_trap_up = not na(or60_high) and high > or60_high and close <= or60_high
+orb60_trap_down = not na(or60_low) and low < or60_low and close >= or60_low
+
+trap_signal = (orb60_trap_up or orb60_trap_down) and in_session
+
+if buy_signal
+    signal_count += 1
+    entry_price := close
+    tp1_price := entry_price * (1 + tp1_percent / 100)
+    tp2_price := entry_price * (1 + tp2_percent / 100)
+    sl_price := entry_price * (1 - sl_percent / 100)
+    signal_type := "BUY"
+    tp1_hit := false
+    tp2_hit := false
+    sl_hit := false
+
+if sell_signal
+    signal_count += 1
+    entry_price := close
+    tp1_price := entry_price * (1 - tp1_percent / 100)
+    tp2_price := entry_price * (1 - tp2_percent / 100)
+    sl_price := entry_price * (1 + sl_percent / 100)
+    signal_type := "SELL"
+    tp1_hit := false
+    tp2_hit := false
+    sl_hit := false
+
+// Track TP and SL hits
+if signal_type == "BUY" and not sl_hit
+    if high >= tp1_price and not tp1_hit
+        tp1_hit := true
+    if high >= tp2_price and not tp2_hit
+        tp2_hit := true
+    if low <= sl_price
+        sl_hit := true
+
+if signal_type == "SELL" and not sl_hit
+    if low <= tp1_price and not tp1_hit
+        tp1_hit := true
+    if low <= tp2_price and not tp2_hit
+        tp2_hit := true
+    if high >= sl_price
+        sl_hit := true
+
+
+// PLOTTING - ORB LEVELS
+
+
+// ORB5 (very subtle)
+orb5_high_plot = plot(orb5_enabled and not na(or5_high) ? or5_high : na, "ORB5 High (5min) ⏱️", color.new(color.yellow, 80), 1, plot.style_linebr)
+orb5_low_plot = plot(orb5_enabled and not na(or5_low) ? or5_low : na, "ORB5 Low (5min) ⏱️", color.new(color.yellow, 80), 1, plot.style_linebr)
+
+// ORB15 (subtle)
+orb15_high_plot = plot(orb15_enabled and not na(or15_high) ? or15_high : na, "ORB15 High (15min) ⏰", color.new(color.orange, 70), 1, plot.style_linebr)
+orb15_low_plot = plot(orb15_enabled and not na(or15_low) ? or15_low : na, "ORB15 Low (15min) ⏰", color.new(color.orange, 70), 1, plot.style_linebr)
+
+// ORB30 (subtle)
+orb30_high_plot = plot(orb30_enabled and not na(or30_high) ? or30_high : na, "ORB30 High (30min) ⏲️", color.new(color.purple, 70), 1, plot.style_linebr)
+orb30_low_plot = plot(orb30_enabled and not na(or30_low) ? or30_low : na, "ORB30 Low (30min) ⏲️", color.new(color.purple, 70), 1, plot.style_linebr)
+
+// Add labels for ORB5, 15, 30 (only if enabled and on last bar)
+if show_line_labels and orb5_enabled and not na(or5_high) and barstate.islast
+    label.new(bar_index, or5_high, "ORB5 HIGH: $" + str.tostring(or5_high, format.mintick), 
+         style=label.style_label_left, 
+         color=color.new(color.yellow, 0), 
+         textcolor=color.white, 
+         size=size.small)
+
+if show_line_labels and orb15_enabled and not na(or15_high) and barstate.islast
+    label.new(bar_index, or15_high, "ORB15 HIGH: $" + str.tostring(or15_high, format.mintick), 
+         style=label.style_label_left, 
+         color=color.new(color.orange, 0), 
+         textcolor=color.white, 
+         size=size.small)
+
+if show_line_labels and orb30_enabled and not na(or30_high) and barstate.islast
+    label.new(bar_index, or30_high, "ORB30 HIGH: $" + str.tostring(or30_high, format.mintick), 
+         style=label.style_label_left, 
+         color=color.new(color.purple, 0), 
+         textcolor=color.white, 
+         size=size.small)
+
+// ORB60 (bold - primary level)
+orb60_high_plot = plot(orb60_enabled and not na(or60_high) ? or60_high : na, "ORB60 High ⬆️", color.new(#26a69a, 0), 2, plot.style_line)
+orb60_low_plot = plot(orb60_enabled and not na(or60_low) ? or60_low : na, "ORB60 Low ⬇️", color.new(#ef5350, 0), 2, plot.style_line)
+
+// Add price labels for ORB60 levels
+if show_line_labels and orb60_enabled and not na(or60_high) and barstate.islast
+    label.new(bar_index, or60_high, "ORB60 HIGH: $" + str.tostring(or60_high, format.mintick), 
+         style=label.style_label_left, 
+         color=color.new(#26a69a, 0), 
+         textcolor=color.white, 
+         size=size.normal)
+
+if show_line_labels and orb60_enabled and not na(or60_low) and barstate.islast
+    label.new(bar_index, or60_low, "ORB60 LOW: $" + str.tostring(or60_low, format.mintick), 
+         style=label.style_label_left, 
+         color=color.new(#ef5350, 0), 
+         textcolor=color.white, 
+         size=size.normal)
+
+// VWAP (modern gradient blue)
+vwap_plot = plot(vwap_enabled ? vwap_value : na, "VWAP 💧", color.new(#2196F3, 0), 2, plot.style_line)
+
+// Add VWAP label
+if show_line_labels and vwap_enabled and barstate.islast
+    label.new(bar_index, vwap_value, "VWAP: $" + str.tostring(vwap_value, format.mintick), 
+         style=label.style_label_left, 
+         color=color.new(#2196F3, 0), 
+         textcolor=color.white, 
+         size=size.normal)
+
+// EMAs (modern colors)
+ema9_plot = plot(ema9_enabled ? ema9 : na, "9 EMA (Fast) 🔵", color.new(#00BCD4, 30), 1)
+ema20_plot = plot(ema20_enabled ? ema20 : na, "20 EMA (Slow) 🟣", color.new(#9C27B0, 30), 1)
+
+// 200 EMA with dynamic historical colors using line.new()
+// This allows hiding ENTIRE visible history when price exits ±1% range
+// Draws last 200 bars as line segments (optimized for performance)
+
+// Array to store line objects
+var line[] ema200_lines = array.new_line(0)
+
+// Delete all old lines
+if barstate.islast
+    while array.size(ema200_lines) > 0
+        line.delete(array.shift(ema200_lines))
+
+// Draw 200 EMA line segments only when current price in ±1% range
+if barstate.islast and show_ema200
+    // Draw line segments for visible history (last 200 bars - optimized)
+    for i = 1 to 200
+        if bar_index - i >= 0 and not na(ema200[i]) and not na(ema200[i-1])
+            // Color based on price vs 200 EMA at each historical bar
+            segment_color = close[i] >= ema200[i] ? color.red : color.green
+            new_line = line.new(bar_index - i, ema200[i], bar_index - i + 1, ema200[i-1],color=segment_color, width=1)
+            array.push(ema200_lines, new_line)
+
+// Add EMA labels
+if show_line_labels and ema9_enabled and barstate.islast
+    label.new(bar_index, ema9, "EMA 9: $" + str.tostring(ema9, format.mintick), 
+         style=label.style_label_left, 
+         color=color.new(#00BCD4, 0), 
+         textcolor=color.white, 
+         size=size.small)
+
+if show_line_labels and ema20_enabled and barstate.islast
+    label.new(bar_index, ema20, "EMA 20: $" + str.tostring(ema20, format.mintick), 
+         style=label.style_label_left, 
+         color=color.new(#9C27B0, 0), 
+         textcolor=color.white, 
+         size=size.small)
+
+// Pre-Market Range (very subtle) - only show if enabled
+pm_high_plot = plot(pm_lines_enabled and not na(pm_high) ? pm_high : na, "Pre-Market High 🌅", color.new(color.gray, 85), 1, plot.style_linebr)
+pm_low_plot = plot(pm_lines_enabled and not na(pm_low) ? pm_low : na, "Pre-Market Low 🌅", color.new(color.gray, 85), 1, plot.style_linebr)
+
+// Add PM range labels
+if show_line_labels and pm_lines_enabled and not na(pm_high) and barstate.islast
+    label.new(bar_index, pm_high, "PM HIGH: $" + str.tostring(pm_high, format.mintick), 
+         style=label.style_label_left, 
+         color=color.new(color.gray, 30), 
+         textcolor=color.white, 
+         size=size.small)
+
+if show_line_labels and pm_lines_enabled and not na(pm_low) and barstate.islast
+    label.new(bar_index, pm_low, "PM LOW: $" + str.tostring(pm_low, format.mintick), 
+         style=label.style_label_left, 
+         color=color.new(color.gray, 30), 
+         textcolor=color.white, 
+         size=size.small)
+
+// Previous Day Range (very subtle crosses) - only show if enabled
+pd_high_plot = plot(pd_lines_enabled and not na(pd_high) ? pd_high : na, "Previous Day High 📅", color.new(color.white, 90), 1, plot.style_cross)
+pd_low_plot = plot(pd_lines_enabled and not na(pd_low) ? pd_low : na, "Previous Day Low 📅", color.new(color.white, 90), 1, plot.style_cross)
+
+
+// PreM/PrevD HIGH/LOW LINES - Show HIGH in 80%-120% zone, LOW in -20%-20% zone
+// ONLY at current bar (no historical lines for clean chart)
+
+
+// Variables to store line objects
+var line prem_high_line_obj = na
+var line prem_low_line_obj = na
+var line prevd_high_line_obj = na
+var line prevd_low_line_obj = na
+
+// PreM High Line (show only when price is in 80%-120% zone, only at current bar)
+show_prem_high = pm_captured and not na(pm_80_level) and not na(pm_120_level) and 
+                 close >= pm_80_level and close <= pm_120_level
+
+// PreM Low Line (show only when price is in -20%-20% zone, only at current bar)
+show_prem_low = pm_captured and not na(pm_minus20_level) and not na(pm_20_level) and close >= pm_minus20_level and close <= pm_20_level
+
+// PrevD High Line (show only when price is in 80%-120% zone, only at current bar)
+show_prevd_high = not na(pd_high) and not na(pd_low) and not na(pd_80_level) and not na(pd_120_level) and 
+                  close >= pd_80_level and close <= pd_120_level
+
+// PrevD Low Line (show only when price is in -20%-20% zone, only at current bar)
+show_prevd_low = not na(pd_high) and not na(pd_low) and not na(pd_minus20_level) and not na(pd_20_level) and 
+                 close >= pd_minus20_level and close <= pd_20_level
+
+// Dynamic color function: Red (in high zone), Green (in low zone), Grey (exactly at level)
+get_prem_prevd_color(price_val, line_val, is_high_line) =>
+    if price_val == line_val
+        color.gray  // Grey when exactly at high or low
+    else if is_high_line
+        color.red   // Red for high line (price in 80%-120% zone)
+    else
+        color.green // Green for low line (price in -20%-20% zone)
+
+// Draw lines only on last bar (current bar) - this keeps chart clean!
+if barstate.islast
+    // Delete old lines first
+    line.delete(prem_high_line_obj)
+    line.delete(prem_low_line_obj)
+    line.delete(prevd_high_line_obj)
+    line.delete(prevd_low_line_obj)
+    
+    // Draw new lines extending left from current bar (if conditions met)
+    if show_prem_high
+        prem_high_line_obj := line.new(bar_index - 100, pm_high, bar_index, pm_high, 
+                                       color=get_prem_prevd_color(close, pm_high, true), width=2, style=line.style_solid)
+    
+    if show_prem_low
+        prem_low_line_obj := line.new(bar_index - 100, pm_low, bar_index, pm_low, 
+                                      color=get_prem_prevd_color(close, pm_low, false), width=2, style=line.style_solid)
+    
+    if show_prevd_high
+        prevd_high_line_obj := line.new(bar_index - 100, pd_high, bar_index, pd_high, color=get_prem_prevd_color(close, pd_high, true), width=2, style=line.style_solid)
+    
+    if show_prevd_low
+        prevd_low_line_obj := line.new(bar_index - 100, pd_low, bar_index, pd_low, 
+                                       color=get_prem_prevd_color(close, pd_low, false), width=2, style=line.style_solid)
+
+
+// 200 EMA LINE - Show only when price within ±20% of 200 EMA
+
+
+// Variable to store line object
+var line ema200_line_obj = na
+
+
+
+// Draw line only on last bar (current bar only)
+if barstate.islast
+    // Delete old line first
+    line.delete(ema200_line_obj)
+    
+    // Draw new line if condition met
+    if show_ema200
+        ema200_line_obj := line.new(bar_index - 100, ema200, bar_index, ema200, color=color.new(color.gray, 90), width=1, style=line.style_solid)
+
+// Labels for PreM/PrevD lines (only on last bar, right side)
+// Delete previous labels to avoid accumulation
+var label prem_high_label = na
+var label prem_low_label = na
+var label prevd_high_label = na
+var label prevd_low_label = na
+var label ema200_label = na
+
+if barstate.islast
+    // Delete old labels
+    label.delete(prem_high_label)
+    label.delete(prem_low_label)
+    label.delete(prevd_high_label)
+    label.delete(prevd_low_label)
+    label.delete(ema200_label)
+    
+    // Create new labels only if condition is true
+    if show_prem_high
+        prem_high_label := label.new(bar_index, pm_high, "PreM High", 
+             style=label.style_label_left, 
+             color=color.new(color.black, 35),  // 65% transparency
+             textcolor=color.white, 
+             size=size.small)
+    
+    if show_prem_low
+        prem_low_label := label.new(bar_index, pm_low, "PreM Low", 
+             style=label.style_label_left, 
+             color=color.new(color.black, 35),  // 65% transparency
+             textcolor=color.white, 
+             size=size.small)
+    
+    if show_prevd_high
+        prevd_high_label := label.new(bar_index, pd_high, "PrevD High", 
+             style=label.style_label_left, 
+             color=color.new(color.black, 35),  // 65% transparency
+             textcolor=color.white, 
+             size=size.small)
+    
+    if show_prevd_low
+        prevd_low_label := label.new(bar_index, pd_low, "PrevD Low", 
+             style=label.style_label_left, 
+             color=color.new(color.black, 35),  // 65% transparency
+             textcolor=color.white, 
+             size=size.small)
+    
+    if show_ema200
+        ema200_emoji = show_ema200_red ? "😇" : "👺"
+        ema200_label := label.new(bar_index, ema200, ema200_emoji, 
+             style=label.style_label_left, 
+             color=color.new(color.gray, 60),  // 40% transparency
+             textcolor=color.white, 
+             size=size.small,
+             tooltip="200 EMA")
+
+// Add Previous Day labels
+if show_line_labels and pd_lines_enabled and not na(pd_high) and barstate.islast
+    label.new(bar_index, pd_high, "PREV DAY HIGH: $" + str.tostring(pd_high, format.mintick), 
+         style=label.style_label_left, 
+         color=color.new(color.gray, 40), 
+         textcolor=color.white, 
+         size=size.small)
+
+if show_line_labels and pd_lines_enabled and not na(pd_low) and barstate.islast
+    label.new(bar_index, pd_low, "PREV DAY LOW: $" + str.tostring(pd_low, format.mintick), 
+         style=label.style_label_left, 
+         color=color.new(color.gray, 40), 
+         textcolor=color.white, 
+         size=size.small)
+
+
+// PLOTTING - SIGNALS
+
+
+plotshape(buy_signal, "Buy", shape.triangleup, location.belowbar, color.new(#26a69a, 0), size=size.small)
+plotshape(sell_signal, "Sell", shape.triangledown, location.abovebar, color.new(#ef5350, 0), size=size.small)
+plotshape(trap_signal, "Trap", shape.xcross, location.absolute, color.new(#FF9800, 0), size=size.tiny)
+
+// EMA Cross Labels removed per user request
+
+
+// ENHANCED LABELS - POSITIONED TO AVOID CANDLE OVERLAP
+
+
+// Create labels for buy signals - positioned away from candles
+if buy_signal and show_signal_labels
+    orb_level = "ORB60"
+    
+    // Breakout label - positioned left of signal to avoid candles
+    breakout_text = "▼ BREAKOUT UP\n" + orb_level + " | #" + str.tostring(signal_count) + "\nVol: " + str.tostring(math.round(rvol, 1)) + "x ⚡"
+    label.new(bar_index + label_offset, high, breakout_text, 
+         style=label.style_label_down, 
+         color=color.new(#ef5350, 0), 
+         textcolor=color.white, 
+         size=size.normal,
+         textalign=text.align_center)
+    
+    // Entry label - far right to avoid candles
+    entry_text = "ENTRY: $" + str.tostring(close, format.mintick)
+    label.new(bar_index + label_offset + 2, close, entry_text, 
+         style=label.style_label_left, 
+         color=color.new(#FF9800, 0), 
+         textcolor=color.white, 
+         size=size.normal,
+         textalign=text.align_left)
+    
+    // Stop Loss label - far right
+    sl_text = "⛔ SL: $" + str.tostring(sl_price, format.mintick)
+    label.new(bar_index + label_offset + 3, sl_price, sl_text, 
+         style=label.style_label_left, 
+         color=color.new(#d32f2f, 0), 
+         textcolor=color.white, 
+         size=size.small,
+         textalign=text.align_left)
+    
+    // TP1 label - far right
+    tp1_pct = tp1_percent
+    tp1_text = "TP1: $" + str.tostring(tp1_price, format.mintick) + " +" + str.tostring(tp1_pct, "#.#") + "%"
+    label.new(bar_index + label_offset + 3, tp1_price, tp1_text, 
+         style=label.style_label_left, 
+         color=color.new(#26a69a, 0), 
+         textcolor=color.white, 
+         size=size.small,
+         textalign=text.align_left)
+    
+    // TP2 label - far right
+    tp2_pct = tp2_percent
+    tp2_text = "TP2: $" + str.tostring(tp2_price, format.mintick) + " +" + str.tostring(tp2_pct, "#.#") + "%"
+    label.new(bar_index + label_offset + 3, tp2_price, tp2_text, 
+         style=label.style_label_left, 
+         color=color.new(#26a69a, 0), 
+         textcolor=color.white, 
+         size=size.small,
+         textalign=text.align_left)
+
+// Create labels for sell signals - positioned away from candles
+if sell_signal and show_signal_labels
+    orb_level = "ORB60"
+    
+    // Breakout label - positioned left of signal
+    breakout_text = "▲ BREAKOUT DOWN\n" + orb_level + " | #" + str.tostring(signal_count) + "\nVol: " + str.tostring(math.round(rvol, 1)) + "x ⚡"
+    label.new(bar_index + label_offset, low, breakout_text, 
+         style=label.style_label_up, 
+         color=color.new(#ef5350, 0), 
+         textcolor=color.white, 
+         size=size.normal,
+         textalign=text.align_center)
+    
+    // Entry label - far right
+    entry_text = "ENTRY: $" + str.tostring(close, format.mintick)
+    label.new(bar_index + label_offset + 2, close, entry_text, 
+         style=label.style_label_left, 
+         color=color.new(#FF9800, 0), 
+         textcolor=color.white, 
+         size=size.normal,
+         textalign=text.align_left)
+    
+    // Stop Loss label - far right
+    sl_text = "⛔ SL: $" + str.tostring(sl_price, format.mintick)
+    label.new(bar_index + label_offset + 3, sl_price, sl_text, 
+         style=label.style_label_left, 
+         color=color.new(#d32f2f, 0), 
+         textcolor=color.white, 
+         size=size.small,
+         textalign=text.align_left)
+    
+    // TP1 label - far right
+    tp1_pct = tp1_percent
+    tp1_text = "TP1: $" + str.tostring(tp1_price, format.mintick) + " +" + str.tostring(tp1_pct, "#.#") + "%"
+    label.new(bar_index + label_offset + 3, tp1_price, tp1_text, 
+         style=label.style_label_left, 
+         color=color.new(#26a69a, 0), 
+         textcolor=color.white, 
+         size=size.small,
+         textalign=text.align_left)
+    
+    // TP2 label - far right
+    tp2_pct = tp2_percent
+    tp2_text = "TP2: $" + str.tostring(tp2_price, format.mintick) + " +" + str.tostring(tp2_pct, "#.#") + "%"
+    label.new(bar_index + label_offset + 3, tp2_price, tp2_text, 
+         style=label.style_label_left, 
+         color=color.new(#26a69a, 0), 
+         textcolor=color.white, 
+         size=size.small,
+         textalign=text.align_left)
+
+
+// MODERN DASHBOARD WITH SOLID BACKGROUND (Hides Candles Behind)
+
+
+if show_dashboard and barstate.islast
+    
+    // Determine position
+    table_position = dashboard_position == "top_left" ? position.top_left : 
+                     dashboard_position == "top_right" ? position.top_right :
+                     dashboard_position == "bottom_left" ? position.bottom_left : position.bottom_right
+    
+    // Create modern styled table with SOLID background to hide candles
+    var table dashboard = table.new(table_position, 2, 23, 
+         bgcolor=color.new(#0d1117, 0),  // SOLID dark background - 0% transparency
+         frame_width=3, 
+         frame_color=color.new(#2196F3, 0),  // Solid blue frame
+         border_width=1, 
+         border_color=color.new(#30363d, 0))  // Solid borders
+    
+    // Modern Header with gradient effect - SOLID
+    table.cell(dashboard, 0, 0, "A+ SCALP " + header_emoji + " | " + publication_date, 
+         text_color=color.new(color.white, 0), 
+         bgcolor=color.new(#1976D2, 0),  // Solid blue
+         text_size=size.normal, text_halign=text.align_center)
+    table.merge_cells(dashboard, 0, 0, 1, 0)
+    
+  
+    
+    // METRICS - Modern styling - SOLID backgrounds
+    row = 2
+    table.cell(dashboard, 0, row, "📊 METRICS", 
+         text_color=color.new(#64B5F6, 0), 
+         bgcolor=color.new(#0d1117, 0),  // Solid
+         text_size=size.normal, text_halign=text.align_center)
+    table.merge_cells(dashboard, 0, row, 1, row)
+    
+    row += 1
+    table.cell(dashboard, 0, row, "Range", 
+         text_color=color.new(#B0BEC5, 0), 
+         bgcolor=color.new(#161b22, 0),  // Solid
+         text_size=size.normal, text_halign=text.align_center)
+    table.cell(dashboard, 1, row, range_status, 
+         text_color=color.white, 
+         bgcolor=color.new(#161b22, 0),  // Solid
+         text_size=size.normal, text_halign=text.align_left)
+    
+    row += 1
+    table.cell(dashboard, 0, row, "Volatility", 
+         text_color=color.new(#B0BEC5, 0), 
+         bgcolor=color.new(#0d1117, 0),  // Solid
+         text_size=size.normal, text_halign=text.align_center)
+    table.cell(dashboard, 1, row, volatility_status, 
+         text_color=color.white, 
+         bgcolor=color.new(#0d1117, 0),  // Solid
+         text_size=size.normal, text_halign=text.align_left)
+    
+    row += 1
+    table.cell(dashboard, 0, row, "Trend", 
+         text_color=color.new(#B0BEC5, 0), 
+         bgcolor=color.new(#161b22, 0),  // Solid
+         text_size=size.normal, text_halign=text.align_center)
+    table.cell(dashboard, 1, row, trend_status, 
+         text_color=color.white, 
+         bgcolor=color.new(#161b22, 0),  // Solid
+         text_size=size.normal, text_halign=text.align_left)
+    
+    row += 1
+    table.cell(dashboard, 0, row, "Volume", 
+         text_color=color.new(#B0BEC5, 0), 
+         bgcolor=color.new(#0d1117, 0),  // Solid
+         text_size=size.normal, text_halign=text.align_center)
+    table.cell(dashboard, 1, row, volume_status, 
+         text_color=color.white, 
+         bgcolor=color.new(#0d1117, 0),  // Solid
+         text_size=size.normal, text_halign=text.align_left)
+    
+    row += 1
+    table.cell(dashboard, 0, row, "Momentum", 
+         text_color=color.new(#B0BEC5, 0), 
+         bgcolor=color.new(#161b22, 0),  // Solid
+         text_size=size.normal, text_halign=text.align_center)
+    table.cell(dashboard, 1, row, momentum_status, 
+         text_color=color.white, 
+         bgcolor=color.new(#161b22, 0),  // Solid
+         text_size=size.normal, text_halign=text.align_left)
+    
+    row += 1
+    table.cell(dashboard, 0, row, "Bias", 
+         text_color=color.new(#B0BEC5, 0), 
+         bgcolor=color.new(#0d1117, 0),  // Solid
+         text_size=size.normal, text_halign=text.align_center)
+    table.cell(dashboard, 1, row, bias_status, 
+         text_color=color.white, 
+         bgcolor=color.new(#0d1117, 0),  // Solid
+         text_size=size.normal, text_halign=text.align_left)
+    
+    // Section divider - SOLID
+    // STATUS - Modern section - SOLID
+    row += 1
+    table.cell(dashboard, 0, row, "🎯 STATUS", 
+         text_color=color.new(#64B5F6, 0), 
+         bgcolor=color.new(#161b22, 0),  // Changed background for visual separation
+         text_size=size.normal, text_halign=text.align_center)
+    table.merge_cells(dashboard, 0, row, 1, row)
+    
+    row += 1
+    table.cell(dashboard, 0, row, "ORB5", 
+         text_color=color.new(#B0BEC5, 0), 
+         bgcolor=color.new(#161b22, 0),  // Solid
+         text_size=size.normal,
+         text_halign=text.align_center)
+    table.cell(dashboard, 1, row, orb5_status, 
+         text_color=color.white, 
+         bgcolor=color.new(#161b22, 0),  // Solid
+         text_size=size.normal,
+         text_halign=text.align_center)
+    
+    row += 1
+    table.cell(dashboard, 0, row, "ORB15", 
+         text_color=color.new(#B0BEC5, 0), 
+         bgcolor=color.new(#0d1117, 0),  // Solid
+         text_size=size.normal, text_halign=text.align_center)
+    table.cell(dashboard, 1, row, orb15_status, 
+         text_color=color.white, 
+         bgcolor=color.new(#0d1117, 0),  // Solid
+         text_size=size.normal, text_halign=text.align_center)
+    
+    row += 1
+    table.cell(dashboard, 0, row, "ORB30", 
+         text_color=color.new(#B0BEC5, 0), 
+         bgcolor=color.new(#161b22, 0),  // Solid
+         text_size=size.normal, text_halign=text.align_center)
+    table.cell(dashboard, 1, row, orb30_status, 
+         text_color=color.white, 
+         bgcolor=color.new(#161b22, 0),  // Solid
+         text_size=size.normal, text_halign=text.align_center)
+    
+    row += 1
+    table.cell(dashboard, 0, row, "ORB60", 
+         text_color=color.new(#B0BEC5, 0), 
+         bgcolor=color.new(#0d1117, 0),  // Solid
+         text_size=size.normal, text_halign=text.align_center)
+    table.cell(dashboard, 1, row, orb60_status, 
+         text_color=color.white, 
+         bgcolor=color.new(#0d1117, 0),  // Solid
+         text_size=size.normal, text_halign=text.align_center)
+    
+    row += 1
+    table.cell(dashboard, 0, row, "VWAP", 
+         text_color=color.new(#B0BEC5, 0), 
+         bgcolor=color.new(#161b22, 0),  // Solid
+         text_size=size.normal, text_halign=text.align_center)
+    table.cell(dashboard, 1, row, vwap_status, 
+         text_color=color.white, 
+         bgcolor=color.new(#161b22, 0),  // Solid
+         text_size=size.normal, text_halign=text.align_center)
+    
+    row += 1
+    table.cell(dashboard, 0, row, "9/20 EMA", 
+         text_color=color.new(#B0BEC5, 0), 
+         bgcolor=color.new(#0d1117, 0),  // Solid
+         text_size=size.normal, text_halign=text.align_center)
+    table.cell(dashboard, 1, row, ema_status, 
+         text_color=color.white, 
+         bgcolor=color.new(#0d1117, 0),  // Solid
+         text_size=size.normal, text_halign=text.align_center)
+    
+    row += 1
+    table.cell(dashboard, 0, row, "200 EMA", 
+         text_color=color.new(#B0BEC5, 0), 
+         bgcolor=color.new(#161b22, 0),  // Solid
+         text_size=size.normal, text_halign=text.align_center)
+    table.cell(dashboard, 1, row, ema200_status, 
+         text_color=color.white, 
+         bgcolor=color.new(#161b22, 0),  // Solid
+         text_size=size.normal, text_halign=text.align_center)
+    
+    row += 1
+    table.cell(dashboard, 0, row, "PreM", 
+         text_color=color.new(#B0BEC5, 0), 
+         bgcolor=color.new(#0d1117, 0),  // Solid
+         text_size=size.normal, text_halign=text.align_center)
+    table.cell(dashboard, 1, row, prem_status, 
+         text_color=color.white, 
+         bgcolor=color.new(#0d1117, 0),  // Solid
+         text_size=size.normal, text_halign=text.align_center)
+    
+    row += 1
+    table.cell(dashboard, 0, row, "PrevD", 
+         text_color=color.new(#B0BEC5, 0), 
+         bgcolor=color.new(#0d1117, 0),  // Solid
+         text_size=size.normal, text_halign=text.align_center)
+    table.cell(dashboard, 1, row, pred_status, 
+         text_color=color.white, 
+         bgcolor=color.new(#0d1117, 0),  // Solid
+         text_size=size.normal, text_halign=text.align_center)
+    
+    // Last Trade Section - if active - SOLID
+    if not na(entry_price)
+        row += 1
+        table.cell(dashboard, 0, row, "💼 TRADE", 
+             text_color=color.new(#64B5F6, 0), 
+             bgcolor=color.new(#0d1117, 0),  // Solid
+             text_size=size.normal, text_halign=text.align_center)
+        table.merge_cells(dashboard, 0, row, 1, row)
+        
+        row += 1
+        trade_status_text = sl_hit ? "❌ SL Hit" : tp2_hit ? "✅✅ TP2" : tp1_hit ? "✅ TP1" : "⏳ Active"
+        trade_color = sl_hit ? color.new(#ef5350, 0) : tp2_hit or tp1_hit ? color.new(#26a69a, 0) : color.new(#FFC107, 0)
+        
+        table.cell(dashboard, 0, row, signal_type, 
+             text_color=color.new(#B0BEC5, 0), 
+             bgcolor=color.new(#161b22, 0),  // Solid
+             text_size=size.normal, text_halign=text.align_center)
+        table.cell(dashboard, 1, row, trade_status_text, 
+             text_color=color.white, 
+             bgcolor=trade_color,  // Already solid
+             text_size=size.normal, text_halign=text.align_center)
+
+
+// ALERTS
+
+
+alertcondition(buy_signal, "ORB60 Buy", "🚀 ORB60 Buy - {{ticker}} @ {{close}}")
+alertcondition(sell_signal, "ORB60 Sell", "🔻 ORB60 Sell - {{ticker}} @ {{close}}")
+alertcondition(trap_signal, "Trap Warning", "⚠️ Trap - {{ticker}}")
+alertcondition(tp1_hit, "TP1 Hit", "✅ TP1 - {{ticker}} @ {{close}}")
+alertcondition(tp2_hit, "TP2 Hit", "✅✅ TP2 - {{ticker}} @ {{close}}")
+alertcondition(sl_hit, "SL Hit", "❌ SL - {{ticker}} @ {{close}}")
+alertcondition(ema_bullish_cross, "EMA Bullish Cross", "🔵 EMA 9 crossed above EMA 20 - {{ticker}} @ {{close}}")
+alertcondition(ema_bearish_cross, "EMA Bearish Cross", "🟣 EMA 9 crossed below EMA 20 - {{ticker}} @ {{close}}")
+//Dashboard 
+
+//@version=
+//Profti Windows Start
+//indicator("Profit Windows", overlay=true, max_boxes_count=500, max_lines_count=500, max_labels_count=500)
+
+// Consolidated inputs
+grey = input.color(color.new(color.gray, 90), "Active Box")
+or5_c = input.color(color.new(color.teal, 95), "OR 5")
+or15_c = input.color(color.new(color.lime, 95), "OR 15")
+or30_c = input.color(color.new(color.green, 95), "OR 30")
+mrn_c = input.color(color.new(color.yellow, 95), "Morning")
+mid_c = input.color(color.new(color.gray, 90), "Midday")
+aft_c = input.color(color.new(color.orange, 95), "Afternoon")
+pwr_c = input.color(color.new(color.red, 95), "Power")
+show_lbl = input.bool(true, "Labels")
+thresh = input.float(20.0, "Threshold %", minval=5.0, maxval=50.0) / 100
+
+// Consolidated vars
+var box or5_box = na
+var box or15_box = na
+var box or30_box = na
+var box mrn_box = na
+var box mid_box = na
+var box aft_box = na
+var box pwr_box = na
+var label or5_lbl = na
+var label or15_lbl = na
+var label or30_lbl = na
+var label mrn_lbl = na
+var label mid_lbl = na
+var label aft_lbl = na
+var label pwr_lbl = na
+var float or5_h = na
+var float or5_l = na
+var int or5_lft = na
+var int or5_rgt = na
+var float or15_h = na
+var float or15_l = na
+var int or15_lft = na
+var int or15_rgt = na
+var float or30_h = na
+var float or30_l = na
+var int or30_lft = na
+var int or30_rgt = na
+var float mrn_h = na
+var float mrn_l = na
+var int mrn_lft = na
+var int mrn_rgt = na
+var float mid_h = na
+var float mid_l = na
+var int mid_lft = na
+var int mid_rgt = na
+var float aft_h = na
+var float aft_l = na
+var int aft_lft = na
+var int aft_rgt = na
+var line ph_ln = na
+var line pl_ln = na
+var label ph_lbl = na
+var label pl_lbl = na
+var box p_box = na
+var line end_ln = na
+var line pr_ln = na
+
+// Cache session checks (once per bar)
+in_or5 = time(timeframe.period, "0930-0935:1234567", "America/New_York")
+in_or15 = time(timeframe.period, "0930-0945:1234567", "America/New_York")
+in_or30 = time(timeframe.period, "0930-1000:1234567", "America/New_York")
+in_mrn = time(timeframe.period, "1000-1130:1234567", "America/New_York")
+in_mid = time(timeframe.period, "1130-1330:1234567", "America/New_York")
+in_aft = time(timeframe.period, "1330-1500:1234567", "America/New_York")
+in_pwr = time(timeframe.period, "1500-1600:1234567", "America/New_York")
+
+// Time calc (once)
+ct = time(timeframe.period, "0000-2400:1234567", "America/New_York")
+tm = hour(ct, "America/New_York") * 60 + minute(ct, "America/New_York")
+
+// Transitions
+or5_st = not na(in_or5) and na(in_or5[1])
+or5_en = na(in_or5) and not na(in_or5[1])
+or15_st = not na(in_or15) and na(in_or15[1])
+or15_en = na(in_or15) and not na(in_or15[1])
+or30_st = not na(in_or30) and na(in_or30[1])
+or30_en = na(in_or30) and not na(in_or30[1])
+mrn_st = not na(in_mrn) and na(in_mrn[1])
+mrn_en = na(in_mrn) and not na(in_mrn[1])
+mid_st = not na(in_mid) and na(in_mid[1])
+mid_en = na(in_mid) and not na(in_mid[1])
+aft_st = not na(in_aft) and na(in_aft[1])
+aft_en = na(in_aft) and not na(in_aft[1])
+pwr_st = not na(in_pwr) and na(in_pwr[1])
+
+// New day cleanup
+var int day = na
+if dayofmonth != day
+    day := dayofmonth
+    or5_h := na
+    or5_l := na
+    or5_lft := na
+    or5_rgt := na
+    or15_h := na
+    or15_l := na
+    or15_lft := na
+    or15_rgt := na
+    or30_h := na
+    or30_l := na
+    or30_lft := na
+    or30_rgt := na
+    mrn_h := na
+    mrn_l := na
+    mrn_lft := na
+    mrn_rgt := na
+    mid_h := na
+    mid_l := na
+    mid_lft := na
+    mid_rgt := na
+    aft_h := na
+    aft_l := na
+    aft_lft := na
+    aft_rgt := na
+    if not na(or5_box)
+        box.delete(or5_box)
+        or5_box := na
+    if not na(or15_box)
+        box.delete(or15_box)
+        or15_box := na
+    if not na(or30_box)
+        box.delete(or30_box)
+        or30_box := na
+    if not na(mrn_box)
+        box.delete(mrn_box)
+        mrn_box := na
+    if not na(mid_box)
+        box.delete(mid_box)
+        mid_box := na
+    if not na(aft_box)
+        box.delete(aft_box)
+        aft_box := na
+    if not na(pwr_box)
+        box.delete(pwr_box)
+        pwr_box := na
+    if not na(or5_lbl)
+        label.delete(or5_lbl)
+        or5_lbl := na
+    if not na(or15_lbl)
+        label.delete(or15_lbl)
+        or15_lbl := na
+    if not na(or30_lbl)
+        label.delete(or30_lbl)
+        or30_lbl := na
+    if not na(mrn_lbl)
+        label.delete(mrn_lbl)
+        mrn_lbl := na
+    if not na(mid_lbl)
+        label.delete(mid_lbl)
+        mid_lbl := na
+    if not na(aft_lbl)
+        label.delete(aft_lbl)
+        aft_lbl := na
+    if not na(pwr_lbl)
+        label.delete(pwr_lbl)
+        pwr_lbl := na
+    if not na(ph_ln)
+        line.delete(ph_ln)
+        ph_ln := na
+    if not na(pl_ln)
+        line.delete(pl_ln)
+        pl_ln := na
+    if not na(ph_lbl)
+        label.delete(ph_lbl)
+        ph_lbl := na
+    if not na(pl_lbl)
+        label.delete(pl_lbl)
+        pl_lbl := na
+    if not na(p_box)
+        box.delete(p_box)
+        p_box := na
+    if not na(end_ln)
+        line.delete(end_ln)
+        end_ln := na
+    if not na(pr_ln)
+        line.delete(pr_ln)
+        pr_ln := na
+
+// Helper funcs
+upd(box b, float h, float l) =>
+    box.set_top(b, math.max(box.get_top(b), h))
+    box.set_bottom(b, math.min(box.get_bottom(b), l))
+    box.set_right(b, bar_index)
+
+pos(label lbl, box b) =>
+    if not na(lbl) and not na(b)
+        label.set_xy(lbl, (box.get_left(b) + bar_index) / 2, box.get_top(b))
+
+// OR 5
+if or5_st
+    or5_box := box.new(bar_index, high, bar_index, low, bgcolor=grey, border_color=color.new(grey, 0), border_width=1)
+    if show_lbl
+        or5_lbl := label.new(bar_index, high, "OR 5", style=label.style_label_down, color=or5_c, textcolor=color.white, size=size.small)
+if in_or5 and not na(or5_box)
+    upd(or5_box, high, low)
+    if show_lbl
+        pos(or5_lbl, or5_box)
+if or5_en and not na(or5_box)
+    or5_h := box.get_top(or5_box)
+    or5_l := box.get_bottom(or5_box)
+    or5_lft := box.get_left(or5_box)
+    or5_rgt := box.get_right(or5_box)
+    box.delete(or5_box)
+    or5_box := na
+    if not na(or5_lbl)
+        label.delete(or5_lbl)
+        or5_lbl := na
+
+// OR 15
+if or15_st
+    or15_box := box.new(bar_index, high, bar_index, low, bgcolor=grey, border_color=color.new(grey, 0), border_width=1)
+if in_or15 and not na(or15_box)
+    upd(or15_box, high, low)
+    p935 = tm > 575
+    if not p935 and not na(or15_lbl)
+        label.delete(or15_lbl)
+        or15_lbl := na
+    if show_lbl and p935 and na(or15_lbl)
+        or15_lbl := label.new((box.get_left(or15_box) + bar_index) / 2, box.get_top(or15_box), "OR 15", style=label.style_label_down, color=or15_c, textcolor=color.white, size=size.small)
+    if show_lbl
+        pos(or15_lbl, or15_box)
+if or15_en and not na(or15_box)
+    or15_h := box.get_top(or15_box)
+    or15_l := box.get_bottom(or15_box)
+    or15_lft := box.get_left(or15_box)
+    or15_rgt := box.get_right(or15_box)
+    box.delete(or15_box)
+    or15_box := na
+    if not na(or15_lbl)
+        label.delete(or15_lbl)
+        or15_lbl := na
+
+// OR 30
+if or30_st
+    or30_box := box.new(bar_index, high, bar_index, low, bgcolor=grey, border_color=color.new(grey, 0), border_width=1)
+if in_or30 and not na(or30_box)
+    upd(or30_box, high, low)
+    p945 = tm > 585
+    if not p945 and not na(or30_lbl)
+        label.delete(or30_lbl)
+        or30_lbl := na
+    if show_lbl and p945 and na(or30_lbl)
+        or30_lbl := label.new((box.get_left(or30_box) + bar_index) / 2, box.get_top(or30_box), "OR 30", style=label.style_label_down, color=or30_c, textcolor=color.white, size=size.small)
+    if show_lbl
+        pos(or30_lbl, or30_box)
+if or30_en and not na(or30_box)
+    or30_h := box.get_top(or30_box)
+    or30_l := box.get_bottom(or30_box)
+    or30_lft := box.get_left(or30_box)
+    or30_rgt := box.get_right(or30_box)
+    box.delete(or30_box)
+    or30_box := na
+    if not na(or30_lbl)
+        label.delete(or30_lbl)
+        or30_lbl := na
+
+// Morning
+if mrn_st
+    mrn_box := box.new(bar_index, high, bar_index, low, bgcolor=grey, border_color=color.new(grey, 0), border_width=1)
+    if show_lbl
+        mrn_lbl := label.new(bar_index, high, "Morning", style=label.style_label_down, color=mrn_c, textcolor=color.white, size=size.small)
+if in_mrn and not na(mrn_box)
+    upd(mrn_box, high, low)
+    if show_lbl
+        pos(mrn_lbl, mrn_box)
+if mrn_en and not na(mrn_box)
+    mrn_h := box.get_top(mrn_box)
+    mrn_l := box.get_bottom(mrn_box)
+    mrn_lft := box.get_left(mrn_box)
+    mrn_rgt := box.get_right(mrn_box)
+    box.delete(mrn_box)
+    mrn_box := na
+    if not na(mrn_lbl)
+        label.delete(mrn_lbl)
+        mrn_lbl := na
+
+// Midday
+if mid_st
+    mid_box := box.new(bar_index, high, bar_index, low, bgcolor=grey, border_color=color.new(grey, 0), border_width=1)
+    if show_lbl
+        mid_lbl := label.new(bar_index, high, "Midday", style=label.style_label_down, color=mid_c, textcolor=color.white, size=size.small)
+if in_mid and not na(mid_box)
+    upd(mid_box, high, low)
+    if show_lbl
+        pos(mid_lbl, mid_box)
+if mid_en and not na(mid_box)
+    mid_h := box.get_top(mid_box)
+    mid_l := box.get_bottom(mid_box)
+    mid_lft := box.get_left(mid_box)
+    mid_rgt := box.get_right(mid_box)
+    box.delete(mid_box)
+    mid_box := na
+    if not na(mid_lbl)
+        label.delete(mid_lbl)
+        mid_lbl := na
+
+// Afternoon
+if aft_st
+    aft_box := box.new(bar_index, high, bar_index, low, bgcolor=grey, border_color=color.new(grey, 0), border_width=1)
+    if show_lbl
+        aft_lbl := label.new(bar_index, high, "Afternoon", style=label.style_label_down, color=aft_c, textcolor=color.white, size=size.small)
+if in_aft and not na(aft_box)
+    upd(aft_box, high, low)
+    if show_lbl
+        pos(aft_lbl, aft_box)
+if aft_en and not na(aft_box)
+    aft_h := box.get_top(aft_box)
+    aft_l := box.get_bottom(aft_box)
+    aft_lft := box.get_left(aft_box)
+    aft_rgt := box.get_right(aft_box)
+    box.delete(aft_box)
+    aft_box := na
+    if not na(aft_lbl)
+        label.delete(aft_lbl)
+        aft_lbl := na
+
+// Power
+if pwr_st
+    pwr_box := box.new(bar_index, high, bar_index, low, bgcolor=grey, border_color=color.new(grey, 0), border_width=1)
+    if show_lbl
+        pwr_lbl := label.new(bar_index, high, "Power", style=label.style_label_down, color=pwr_c, textcolor=color.white, size=size.small)
+if in_pwr and not na(pwr_box)
+    upd(pwr_box, high, low)
+    if show_lbl
+        pos(pwr_lbl, pwr_box)
+
+// Cleanup prev
+if not na(ph_ln)
+    line.delete(ph_ln)
+    ph_ln := na
+if not na(pl_ln)
+    line.delete(pl_ln)
+    pl_ln := na
+if not na(ph_lbl)
+    label.delete(ph_lbl)
+    ph_lbl := na
+if not na(pl_lbl)
+    label.delete(pl_lbl)
+    pl_lbl := na
+if not na(p_box)
+    box.delete(p_box)
+    p_box := na
+if not na(end_ln)
+    line.delete(end_ln)
+    end_ln := na
+
+// Prev session
+var float ph = na
+var float pl = na
+var int pl_ft = na
+var int pr_gt = na
+var string pn = na
+var color pc = na
+
+if tm >= 570 and tm < 575
+    ph := na
+    pl := na
+    pl_ft := na
+    pr_gt := na
+    pn := na
+    pc := na
+else if tm >= 575 and tm < 585
+    if not na(or5_h) and not na(or5_l)
+        ph := or5_h
+        pl := or5_l
+        pl_ft := or5_lft
+        pr_gt := or5_rgt
+        pn := "OR 5"
+        pc := or5_c
+else if tm >= 585 and tm < 600
+    if not na(or15_h) and not na(or15_l)
+        ph := or15_h
+        pl := or15_l
+        pl_ft := or15_lft
+        pr_gt := or15_rgt
+        pn := "OR 15"
+        pc := or15_c
+else if not na(in_mrn)
+    if not na(or30_h) and not na(or30_l)
+        ph := or30_h
+        pl := or30_l
+        pl_ft := or30_lft
+        pr_gt := or30_rgt
+        pn := "OR 30"
+        pc := or30_c
+    else if not na(or15_h) and not na(or15_l)
+        ph := or15_h
+        pl := or15_l
+        pl_ft := or15_lft
+        pr_gt := or15_rgt
+        pn := "OR 15"
+        pc := or15_c
+else if not na(in_mid)
+    if not na(mrn_h) and not na(mrn_l)
+        ph := mrn_h
+        pl := mrn_l
+        pl_ft := mrn_lft
+        pr_gt := mrn_rgt
+        pn := "Morning"
+        pc := mrn_c
+else if not na(in_aft)
+    if not na(mid_h) and not na(mid_l)
+        ph := mid_h
+        pl := mid_l
+        pl_ft := mid_lft
+        pr_gt := mid_rgt
+        pn := "Midday"
+        pc := mid_c
+else if not na(in_pwr)
+    if not na(aft_h) and not na(aft_l)
+        ph := aft_h
+        pl := aft_l
+        pl_ft := aft_lft
+        pr_gt := aft_rgt
+        pn := "Afternoon"
+        pc := aft_c
+
+// Interact
+if not na(ph) and not na(pl) and not na(pl_ft) and not na(pr_gt) and not na(pn)
+    r = ph - pl
+    t = r * thresh
+    ih = math.abs(close - ph) <= t
+    il = math.abs(close - pl) <= t
+    
+    var color ic = na
+    if ih
+        ic := close == ph ? color.gray : color.red
+    if il
+        ic := close == pl ? color.gray : color.green
+    
+    if ih or il
+        p_box := box.new(pl_ft, ph, pr_gt, pl, bgcolor=color.new(ic, 90), border_color=color.new(ic, 0), border_width=1)
+    
+    if ih
+        hc = close == ph ? color.gray : color.red
+        ph_ln := line.new(pl_ft, ph, bar_index, ph, color=hc, width=1, style=line.style_dashed)
+        ph_lbl := label.new(bar_index, ph, pn + " High", style=label.style_label_left, color=pc, textcolor=color.white, size=size.small)
+    
+    if il
+        lc = close == pl ? color.gray : color.green
+        pl_ln := line.new(pl_ft, pl, bar_index, pl, color=lc, width=1, style=line.style_dashed)
+        pl_lbl := label.new(bar_index, pl, pn + " Low", style=label.style_label_left, color=pc, textcolor=color.white, size=size.small)
+
+// End line
+var int et = na
+if not na(in_or5)
+    et := 575
+else if not na(in_or15) or not na(in_or30)
+    et := 600
+else if not na(in_mrn)
+    et := 690
+else if not na(in_mid)
+    et := 810
+else if not na(in_aft)
+    et := 900
+else if not na(in_pwr)
+    et := 960
+
+if not na(et)
+    ets = timestamp("America/New_York", year, month, dayofmonth, 0, 0) + et * 60 * 1000
+    end_ln := line.new(ets, low * 0.95, ets, high * 1.05, xloc=xloc.bar_time, color=color.white, width=1, style=line.style_dotted)
+
+// Price line
+if not na(pr_ln)
+    line.delete(pr_ln)
+pr_ln := line.new(bar_index - 1, close, bar_index, close, extend=extend.both, color=color.red, width=1, style=line.style_dotted)
+//Profit Windows End

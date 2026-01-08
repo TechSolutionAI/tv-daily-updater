@@ -1,0 +1,817 @@
+//@version=5
+
+//Scalp levels Start
+
+
+indicator("GOAT Scalp Levels", overlay=true, max_lines_count=100, max_labels_count=200, max_boxes_count=50)
+
+
+// CONFIGURATION maro maro final final
+
+
+var string CONFIG_GROUP = "⚙️ Configuration"
+var string SETUPS_GROUP = "📋 Daily Setups"
+var string VISUAL_GROUP = "🎨 Visual Design"
+var string SESSION_GROUP = "⏰ Session Settings"
+var string TOGGLE_GROUP = "🔘 Feature Toggles"
+
+// === WEEKLY DEFAULT SETUPS (Updated by Discord Bot) ===
+// Format: "TICKER|Breakout|p1,p2,p3;TICKER|Breakdown|p1,p2,p3"
+defaultSetupsMonday = "SPY|Breakdown|683.11,682.4,681.2,680.4;SPY|Breakout|685.66,686.4,687,688;TSLA|Breakdown|443.44,442.5,441,439.5;TSLA|Breakout|445.88,446.6,448,450;NVDA|Breakdown|190.89,190.4,189.4,188.8;NVDA|Breakout|191.86,192.4,192.8,193.2"
+defaultSetupsTuesday = ""
+defaultSetupsWednesday = ""
+defaultSetupsThursday = ""
+defaultSetupsFriday = ""
+
+// === DAY SELECTION ===
+selectedDay = input.string("Mon", title="📆 Select Day", options=["Mon", "Tue", "Wed", "Thu", "Fri"], group=CONFIG_GROUP)
+showAllTickers = input.bool(false, "🗂️ Show All Tickers", tooltip="If off, only show levels for current chart", group=CONFIG_GROUP)
+
+// === DAILY SETUPS (Bot fills defaults, you can edit/override) ===
+mondaySetups = input.string(defaultSetupsMonday, title="Monday Setups", group=SETUPS_GROUP, tooltip="Format: TICKER|Breakout|p1,p2;TICKER|Breakdown|p1,p2")
+tuesdaySetups = input.string(defaultSetupsTuesday, title="Tuesday Setups", group=SETUPS_GROUP)
+wednesdaySetups = input.string(defaultSetupsWednesday, title="Wednesday Setups", group=SETUPS_GROUP)
+thursdaySetups = input.string(defaultSetupsThursday, title="Thursday Setups", group=SETUPS_GROUP)
+fridaySetups = input.string(defaultSetupsFriday, title="Friday Setups", group=SETUPS_GROUP)
+
+// Get the appropriate setups string based on selected day
+scalpString = switch selectedDay
+    "Mon" => mondaySetups
+    "Tue" => tuesdaySetups
+    "Wed" => wednesdaySetups
+    "Thu" => thursdaySetups
+    "Fri" => fridaySetups
+    => ""
+
+// Visual Style Options
+visualTheme = input.string("Modern Dark", "Theme", options=["Modern Dark", "Professional Light", "High Contrast", "Minimalist"], group=VISUAL_GROUP)
+lineStyle = input.string("Dynamic", "Line Style", options=["Dynamic", "Solid", "Dashed", "Dotted"], group=VISUAL_GROUP, tooltip="Dynamic adjusts based on distance from price")
+enableSmartFade = input.bool(true, "✨ Smart Fade (Distant Levels)", group=VISUAL_GROUP)
+maxVisibleLevels = input.int(6, "Max Visible Levels", minval=2, maxval=20, group=VISUAL_GROUP)
+
+// Session Settings
+sessionStartHour = input.int(9, "Signal Window Start Hour", minval=0, maxval=23, group=SESSION_GROUP)
+sessionStartMin = input.int(30, "Signal Window Start Minute", minval=0, maxval=59, group=SESSION_GROUP)
+sessionEndHour = input.int(11, "Signal Window End Hour", minval=0, maxval=23, group=SESSION_GROUP)
+sessionEndMin = input.int(30, "Signal Window End Minute", minval=0, maxval=59, group=SESSION_GROUP)
+outsideSessionTransparency = input.int(70, "Outside Session Transparency", minval=0, maxval=100, group=SESSION_GROUP)
+
+// Feature Toggles
+showTargets = input.bool(true, "🎯 Show Target Levels", group=TOGGLE_GROUP)
+showContinuationDots = input.bool(true, "🔵 Show Continuation Dots", group=TOGGLE_GROUP)
+showWickRejection = input.bool(true, "⚠️ Show Wick Rejections", group=TOGGLE_GROUP)
+
+
+// THEME COLORS
+
+
+[colorBreakout, colorBreakdown, colorBuy, colorSell, colorAccent, colorWarning] = switch visualTheme
+    "Modern Dark" => [color.new(#00FF00, 0), color.new(#FF6B35, 0), color.new(#10B981, 0), color.new(#EF4444, 0), color.new(#8B5CF6, 0), color.new(#FBBF24, 0)]
+    "Professional Light" => [color.new(#059669, 0), color.new(#DC2626, 0), color.new(#059669, 0), color.new(#DC2626, 0), color.new(#7C3AED, 0), color.new(#D97706, 0)]
+    "High Contrast" => [color.new(#00FF00, 0), color.new(#FF0000, 0), color.new(#00FF00, 0), color.new(#FF0000, 0), color.new(#FF00FF, 0), color.new(#FFFF00, 0)]
+    => [color.new(#64748B, 0), color.new(#64748B, 0), color.new(#334155, 0), color.new(#334155, 0), color.new(#475569, 0), color.new(#94A3B8, 0)]
+
+
+// HELPER FUNCTIONS
+
+
+// Parse setup string into components
+splitLine(line) =>
+    parts = str.split(line, "|")
+    ticker = array.size(parts) > 0 ? array.get(parts, 0) : ""
+    setupType = array.size(parts) > 1 ? array.get(parts, 1) : ""
+    levelsStr = array.size(parts) > 2 ? array.get(parts, 2) : ""
+    [ticker, setupType, levelsStr]
+
+// Parse comma-separated floats
+parseFloats(strList) =>
+    raw = str.split(strList, ",")
+    out = array.new_float()
+    for i = 0 to array.size(raw) - 1
+        val = str.tonumber(str.trim(array.get(raw, i)))
+        if not na(val)
+            array.push(out, val)
+    out
+
+// Check if current time is within trading session
+isWithinSession() =>
+    h = hour(time, "America/New_York")
+    m = minute(time, "America/New_York")
+    currentMins = h * 60 + m
+    startMins = sessionStartHour * 60 + sessionStartMin
+    endMins = sessionEndHour * 60 + sessionEndMin
+    currentMins >= startMins and currentMins <= endMins
+
+// Check if market is open (after 9:30 AM ET)
+isMarketOpen() =>
+    h = hour(time, "America/New_York")
+    m = minute(time, "America/New_York")
+    h > 9 or (h == 9 and m >= 30)
+
+// Distance-based styling
+getDistanceFromPrice(levelPrice) =>
+    math.abs(close - levelPrice)
+
+getLineTransparency(distance, avgPrice) =>
+    if not enableSmartFade
+        0
+    else
+        percentDistance = (distance / avgPrice) * 100
+        if percentDistance < 0.5
+            0
+        else if percentDistance < 1.0
+            20
+        else if percentDistance < 2.0
+            40
+        else if percentDistance < 3.0
+            60
+        else
+            80
+
+getLineWidth(distance, avgPrice) =>
+    percentDistance = (distance / avgPrice) * 100
+    if percentDistance < 0.5
+        3
+    else if percentDistance < 1.0
+        2
+    else
+        1
+
+
+// STATE STORAGE
+
+
+var string[] levelKeys = array.new_string()
+var label[] lastBuyLabel = array.new<label>()
+var label[] lastSellLabel = array.new<label>()
+var int[] lastSignalBar = array.new<int>()
+var float[] signalEntryPrice = array.new_float()
+var float[] signalT1Price = array.new_float()
+var string[] signalDirection = array.new_string()
+var bool[] t1Achieved = array.new_bool()
+var label[] t1Labels = array.new<label>()
+
+// Continuation dot tracking
+var string continuationDirection = ""  // "long" or "short" or "" (none)
+var int continuationSignalBar = na  // bar index of the signal
+var float continuationTrackPrice = na  // highest high (long) or lowest low (short) from signal bar to last dot bar
+var label[] continuationDotLabels = array.new<label>()  // store dot labels so they can be deleted on failed trade
+
+// Track signal and full move for wick rejection exclusion
+var bool signalThisBar = false
+var bool fullMoveAchievedThisBar = false
+
+// Wick rejection labels array (to delete when new signal appears)
+var label[] wickRejectionLabels = array.new<label>()
+
+// Level visualization arrays
+var line[] levelLines = array.new<line>()
+var label[] levelLabels = array.new<label>()
+
+// Level data arrays for dashboard
+var float[] allLevelsData = array.new<float>()
+var string[] allLevelsType = array.new<string>()
+var string[] allLevelsTicker = array.new<string>()
+var int[] allLevelsIndex = array.new<int>()
+var int[] sortedIndices = array.new<int>()
+
+// Track last signal type for continuation dots
+var string lastSignalType = ""
+
+
+// STATE MANAGEMENT
+
+
+getIndex(key) =>
+    idx = array.indexof(levelKeys, key)
+    if idx == -1
+        array.push(levelKeys, key)
+        array.push(lastBuyLabel, na)
+        array.push(lastSellLabel, na)
+        array.push(lastSignalBar, na)
+        array.push(signalEntryPrice, na)
+        array.push(signalT1Price, na)
+        array.push(signalDirection, "")
+        array.push(t1Achieved, false)
+        array.size(levelKeys) - 1
+    else
+        idx
+
+
+// PARSE SETUPS
+
+
+setups = str.split(scalpString, ";")
+
+
+// TIME ZONE HELPERS
+
+
+getBarTimeMinutes() =>
+    h = hour(time, "America/New_York")
+    m = minute(time, "America/New_York")
+    h * 60 + m
+
+isNewDay() =>
+    dayofmonth(time, "America/New_York") != dayofmonth(time[1], "America/New_York")
+
+
+// SIGNAL GENERATION (NON-REPAINTING, CLOSE-BASED)
+
+
+// Collect ALL levels from all setups into a single sorted array for T1 lookup
+var float[] allLevelsForT1 = array.new_float()
+
+// Store entry levels for each signal (needed for invalidation check)
+var float[] signalEntryLevel = array.new_float()
+
+// Check if current bar has wick rejection at any level
+isWickRejectionBar() =>
+    if not showWickRejection
+        false
+    else
+        bodySize = math.abs(close - open)
+        upperWick = high - math.max(open, close)
+        lowerWick = math.min(open, close) - low
+        wickThreshold = bodySize * 0.38
+        hasRejection = false
+        
+        for i = 0 to array.size(setups) - 1
+            if hasRejection
+                break
+            lineRaw = array.get(setups, i)
+            [ticker, setupType, levelsStr] = splitLine(lineRaw)
+            if showAllTickers or str.upper(ticker) == str.upper(syminfo.ticker)
+                levels = parseFloats(levelsStr)
+                for j = 0 to array.size(levels) - 1
+                    lv = array.get(levels, j)
+                    // BUY Rejection check
+                    if high > lv and math.max(open, close) <= lv and upperWick > wickThreshold
+                        hasRejection := true
+                        break
+                    // SELL Rejection check
+                    if low < lv and math.min(open, close) >= lv and lowerWick > wickThreshold
+                        hasRejection := true
+                        break
+        hasRejection
+
+// Track if this bar is a wick rejection bar
+var bool isWickRejection = false
+
+if barstate.isconfirmed and isMarketOpen()
+    // Check for wick rejection first (has priority)
+    isWickRejection := isWickRejectionBar()
+    
+    // Build sorted array of all levels for T1 calculation
+    array.clear(allLevelsForT1)
+    for i = 0 to array.size(setups) - 1
+        lineRaw = array.get(setups, i)
+        [ticker, setupType, levelsStr] = splitLine(lineRaw)
+        if showAllTickers or str.upper(ticker) == str.upper(syminfo.ticker)
+            levels = parseFloats(levelsStr)
+            for j = 0 to array.size(levels) - 1
+                lv = array.get(levels, j)
+                // Avoid duplicates
+                if array.indexof(allLevelsForT1, lv) == -1
+                    array.push(allLevelsForT1, lv)
+    
+    // Sort all levels ascending
+    if array.size(allLevelsForT1) > 1
+        array.sort(allLevelsForT1, order.ascending)
+    
+    withinSession = isWithinSession()
+    signalTransparency = withinSession ? 0 : outsideSessionTransparency
+    
+    // Reset tracking variables for this bar
+    signalThisBar := false
+    fullMoveAchievedThisBar := false
+    
+    // === STANDALONE FULL MOVE DETECTION (for bars that cross multiple levels without prior signal) ===
+    // If a bar's body crosses through a level AND reaches 80% to next level, show star
+    // This catches cases where no prior signal exists OR bar is a wick rejection
+    if array.size(allLevelsForT1) >= 2
+        // Check for upward moves (body crosses above a level, high reaches 80% to next level)
+        for lvIdx = 0 to array.size(allLevelsForT1) - 2
+            if fullMoveAchievedThisBar
+                break
+            entryLevel = array.get(allLevelsForT1, lvIdx)
+            nextLevel = array.get(allLevelsForT1, lvIdx + 1)
+            
+            // Body crosses upward through entryLevel: open <= level, close > level
+            if open <= entryLevel and close > entryLevel
+                target80 = entryLevel + (nextLevel - entryLevel) * 0.80
+                if high >= target80
+                    // Standalone full move achieved!
+                    t1Lab = label.new(bar_index, high + 0.2, "⭐", style=label.style_none, yloc=yloc.price, textcolor=colorAccent, size=size.normal, tooltip="Standalone Full Move: " + str.tostring(entryLevel, "#.##") + " → " + str.tostring(nextLevel, "#.##"))
+                    array.push(t1Labels, t1Lab)
+                    fullMoveAchievedThisBar := true
+                    
+                    // Set t1Achieved for the ENTRY level to avoid duplicate stars from signals on this bar
+                    // Find the ticker for this level and set t1Achieved
+                    for si = 0 to array.size(setups) - 1
+                        setupLine = array.get(setups, si)
+                        [sTicker, sType, sLevels] = splitLine(setupLine)
+                        if showAllTickers or str.upper(sTicker) == str.upper(syminfo.ticker)
+                            parsedLevels = parseFloats(sLevels)
+                            if array.indexof(parsedLevels, entryLevel) != -1
+                                entryLevelKey = sTicker + "_" + str.tostring(entryLevel)
+                                entryIdx = getIndex(entryLevelKey)
+                                array.set(t1Achieved, entryIdx, true)
+                                break
+                    break  // Only one star per bar
+        
+        // Check for downward moves (body crosses below a level, low reaches 80% to next level)
+        if not fullMoveAchievedThisBar
+            for lvIdx = 1 to array.size(allLevelsForT1) - 1
+                if fullMoveAchievedThisBar
+                    break
+                entryLevel = array.get(allLevelsForT1, lvIdx)
+                nextLevel = array.get(allLevelsForT1, lvIdx - 1)
+                
+                // Body crosses downward through entryLevel: open >= level, close < level
+                if open >= entryLevel and close < entryLevel
+                    target80 = entryLevel - (entryLevel - nextLevel) * 0.80
+                    if low <= target80
+                        // Standalone full move achieved!
+                        t1Lab = label.new(bar_index, low - 0.2, "⭐", style=label.style_none, yloc=yloc.price, textcolor=colorAccent, size=size.normal, tooltip="Standalone Full Move: " + str.tostring(entryLevel, "#.##") + " → " + str.tostring(nextLevel, "#.##"))
+                        array.push(t1Labels, t1Lab)
+                        fullMoveAchievedThisBar := true
+                        
+                        // Set t1Achieved for the ENTRY level to avoid duplicate stars from signals on this bar
+                        // Find the ticker for this level and set t1Achieved
+                        for si = 0 to array.size(setups) - 1
+                            setupLine = array.get(setups, si)
+                            [sTicker, sType, sLevels] = splitLine(setupLine)
+                            if showAllTickers or str.upper(sTicker) == str.upper(syminfo.ticker)
+                                parsedLevels = parseFloats(sLevels)
+                                if array.indexof(parsedLevels, entryLevel) != -1
+                                    entryLevelKey = sTicker + "_" + str.tostring(entryLevel)
+                                    entryIdx = getIndex(entryLevelKey)
+                                    array.set(t1Achieved, entryIdx, true)
+                                    break
+                        break  // Only one star per bar
+    
+    // Track if we already signaled this bar (only first level cross)
+    var bool signalTriggeredThisBar = false
+    signalTriggeredThisBar := false
+    
+    for i = 0 to array.size(setups) - 1
+        if signalTriggeredThisBar
+            break
+            
+        lineRaw = array.get(setups, i)
+        [ticker, setupType, levelsStr] = splitLine(lineRaw)
+        
+        if showAllTickers or str.upper(ticker) == str.upper(syminfo.ticker)
+            levels = parseFloats(levelsStr)
+            if array.size(levels) < 1
+                continue
+            
+            for j = 0 to array.size(levels) - 1
+                if signalTriggeredThisBar
+                    break
+                    
+                currentLevel = array.get(levels, j)
+                levelKey = ticker + "_" + str.tostring(currentLevel)
+                idx = getIndex(levelKey)
+                
+                // Ensure signalEntryLevel array is large enough
+                while array.size(signalEntryLevel) <= idx
+                    array.push(signalEntryLevel, na)
+                
+                // Get current state
+                currentSignalBar = array.get(lastSignalBar, idx)
+                currentDirection = array.get(signalDirection, idx)
+                currentEntry = array.get(signalEntryPrice, idx)
+                currentT1 = array.get(signalT1Price, idx)
+                isT1Done = array.get(t1Achieved, idx)
+                currentEntryLevel = array.get(signalEntryLevel, idx)
+                
+                // Check for active trade management
+                if not na(currentSignalBar) and not isT1Done
+                    
+                    // Check T1 completion (80% of move) - only if T1 exists
+                    if not na(currentT1)
+                        target80 = currentDirection == "long" ? currentEntry + (currentT1 - currentEntry) * 0.80 : currentEntry - (currentEntry - currentT1) * 0.80
+                        
+                        // Check T1 completion (80% of move) - triggers when high/low reaches target
+                        if currentDirection == "long" and high >= target80
+                            array.set(t1Achieved, idx, true)
+                            fullMoveAchievedThisBar := true
+                            // Star at top of candle for up moves
+                            t1Lab = label.new(bar_index, high + 0.2, "⭐", style=label.style_none, yloc=yloc.price, textcolor=colorAccent, size=size.normal, tooltip="T1 Complete: " + str.tostring(target80, "#.##"))
+                            array.push(t1Labels, t1Lab)
+                            
+                            // Stop continuation dots after full move - clear arrays WITHOUT deleting labels (keep them permanent)
+                            array.clear(continuationDotLabels)
+                            continuationDirection := ""
+                            continuationTrackPrice := na
+                            continuationSignalBar := na
+                            
+                        else if currentDirection == "short" and low <= target80
+                            array.set(t1Achieved, idx, true)
+                            fullMoveAchievedThisBar := true
+                            // Star at bottom of candle for down moves
+                            t1Lab = label.new(bar_index, low - 0.2, "⭐", style=label.style_none, yloc=yloc.price, textcolor=colorAccent, size=size.normal, tooltip="T1 Complete: " + str.tostring(target80, "#.##"))
+                            array.push(t1Labels, t1Lab)
+                            
+                            // Stop continuation dots after full move - clear arrays WITHOUT deleting labels (keep them permanent)
+                            array.clear(continuationDotLabels)
+                            continuationDirection := ""
+                            continuationTrackPrice := na
+                            continuationSignalBar := na
+                    
+                    // Check for failed trade (price body crosses back through entry level)
+                    // If T1 not achieved, silently delete the signal
+                    if not isT1Done and not na(currentEntryLevel)
+                        if currentDirection == "long" and open < currentEntryLevel and close < currentEntryLevel
+                            // Delete BUY label silently
+                            prevBuyLab = array.get(lastBuyLabel, idx)
+                            if not na(prevBuyLab)
+                                label.delete(prevBuyLab)
+                            array.set(lastBuyLabel, idx, na)
+                            array.set(lastSignalBar, idx, na)
+                            array.set(signalDirection, idx, "")
+                            array.set(signalEntryPrice, idx, na)
+                            array.set(signalT1Price, idx, na)
+                            array.set(signalEntryLevel, idx, na)
+                            
+                            // Delete all continuation dots from this failed trade
+                            if array.size(continuationDotLabels) > 0
+                                for dotIdx = 0 to array.size(continuationDotLabels) - 1
+                                    dotLab = array.get(continuationDotLabels, dotIdx)
+                                    if not na(dotLab)
+                                        label.delete(dotLab)
+                                array.clear(continuationDotLabels)
+                            
+                            // Stop continuation dots on failed trade
+                            continuationDirection := ""
+                            continuationTrackPrice := na
+                            continuationSignalBar := na
+                            
+                        else if currentDirection == "short" and open > currentEntryLevel and close > currentEntryLevel
+                            // Delete SELL label silently
+                            prevSellLab = array.get(lastSellLabel, idx)
+                            if not na(prevSellLab)
+                                label.delete(prevSellLab)
+                            array.set(lastSellLabel, idx, na)
+                            array.set(lastSignalBar, idx, na)
+                            array.set(signalDirection, idx, "")
+                            array.set(signalEntryPrice, idx, na)
+                            array.set(signalT1Price, idx, na)
+                            array.set(signalEntryLevel, idx, na)
+                            
+                            // Delete all continuation dots from this failed trade
+                            if array.size(continuationDotLabels) > 0
+                                for dotIdx = 0 to array.size(continuationDotLabels) - 1
+                                    dotLab = array.get(continuationDotLabels, dotIdx)
+                                    if not na(dotLab)
+                                        label.delete(dotLab)
+                                array.clear(continuationDotLabels)
+                            
+                            // Stop continuation dots on failed trade
+                            continuationDirection := ""
+                            continuationTrackPrice := na
+                            continuationSignalBar := na
+                
+                // === BUY SIGNAL ===
+                // Conditions: open below/at level, close above level (body crosses through upward)
+                // Skip if this is a wick rejection bar
+                buySignal = open <= currentLevel and close > currentLevel and not isWickRejection
+                
+                if buySignal
+                    signalTriggeredThisBar := true
+                    signalThisBar := true
+                    
+                    // Find T1: next higher level
+                    t1Level = float(na)
+                    levelIdx = array.indexof(allLevelsForT1, currentLevel)
+                    if levelIdx != -1 and levelIdx < array.size(allLevelsForT1) - 1
+                        t1Level := array.get(allLevelsForT1, levelIdx + 1)
+                    
+                    // Clear any previous labels for this level (always delete now)
+                    prevBuyLab = array.get(lastBuyLabel, idx)
+                    prevSellLab = array.get(lastSellLabel, idx)
+                    if not na(prevBuyLab)
+                        label.delete(prevBuyLab)
+                    if not na(prevSellLab)
+                        label.delete(prevSellLab)
+                    
+                    // Delete all previous wick rejection labels
+                    if array.size(wickRejectionLabels) > 0
+                        for wIdx = 0 to array.size(wickRejectionLabels) - 1
+                            wLab = array.get(wickRejectionLabels, wIdx)
+                            if not na(wLab)
+                                label.delete(wLab)
+                        array.clear(wickRejectionLabels)
+                    
+                    labelColor = color.new(colorBuy, signalTransparency)
+                    tooltipText = "Entry: " + str.tostring(currentLevel, "#.##")
+                    if not na(t1Level)
+                        tooltipText := tooltipText + " | T1: " + str.tostring(t1Level, "#.##")
+                    
+                    bLab = label.new(bar_index, low, "BUY", style=label.style_label_up, yloc=yloc.price, color=labelColor, textcolor=color.white, size=size.tiny, tooltip=tooltipText)
+                    
+                    array.set(lastBuyLabel, idx, bLab)
+                    array.set(lastSellLabel, idx, na)
+                    array.set(lastSignalBar, idx, bar_index)
+                    array.set(signalEntryPrice, idx, currentLevel)
+                    array.set(signalT1Price, idx, t1Level)
+                    array.set(signalDirection, idx, "long")
+                    array.set(t1Achieved, idx, false)
+                    array.set(signalEntryLevel, idx, currentLevel)
+                    
+                    // Clear previous continuation dots and reset tracking for BUY
+                    if array.size(continuationDotLabels) > 0
+                        for dotIdx = 0 to array.size(continuationDotLabels) - 1
+                            dotLab = array.get(continuationDotLabels, dotIdx)
+                            if not na(dotLab)
+                                label.delete(dotLab)
+                        array.clear(continuationDotLabels)
+                    continuationDirection := "long"
+                    continuationSignalBar := bar_index  // store signal bar index
+                    continuationTrackPrice := high   // start with signal bar's high
+                    
+                    lastSignalType := "buy"
+                
+                // === SELL SIGNAL ===
+                // Conditions: open above/at level, close below level (body crosses through downward)
+                // Skip if this is a wick rejection bar
+                sellSignal = open >= currentLevel and close < currentLevel and not isWickRejection
+                
+                if sellSignal
+                    signalTriggeredThisBar := true
+                    signalThisBar := true
+                    
+                    // Find T1: next lower level
+                    t1Level = float(na)
+                    levelIdx = array.indexof(allLevelsForT1, currentLevel)
+                    if levelIdx != -1 and levelIdx > 0
+                        t1Level := array.get(allLevelsForT1, levelIdx - 1)
+                    
+                    // Clear any previous labels for this level (always delete now)
+                    prevBuyLab = array.get(lastBuyLabel, idx)
+                    prevSellLab = array.get(lastSellLabel, idx)
+                    if not na(prevBuyLab)
+                        label.delete(prevBuyLab)
+                    if not na(prevSellLab)
+                        label.delete(prevSellLab)
+                    
+                    // Delete all previous wick rejection labels
+                    if array.size(wickRejectionLabels) > 0
+                        for wIdx = 0 to array.size(wickRejectionLabels) - 1
+                            wLab = array.get(wickRejectionLabels, wIdx)
+                            if not na(wLab)
+                                label.delete(wLab)
+                        array.clear(wickRejectionLabels)
+                    
+                    labelColor = color.new(colorSell, signalTransparency)
+                    tooltipText = "Entry: " + str.tostring(currentLevel, "#.##")
+                    if not na(t1Level)
+                        tooltipText := tooltipText + " | T1: " + str.tostring(t1Level, "#.##")
+                    
+                    sLab = label.new(bar_index, high, "SELL", style=label.style_label_down, yloc=yloc.price, color=labelColor, textcolor=color.white, size=size.tiny, tooltip=tooltipText)
+                    
+                    array.set(lastSellLabel, idx, sLab)
+                    array.set(lastBuyLabel, idx, na)
+                    array.set(lastSignalBar, idx, bar_index)
+                    array.set(signalEntryPrice, idx, currentLevel)
+                    array.set(signalT1Price, idx, t1Level)
+                    array.set(signalDirection, idx, "short")
+                    array.set(t1Achieved, idx, false)
+                    array.set(signalEntryLevel, idx, currentLevel)
+                    
+                    // Clear previous continuation dots and reset tracking for SELL
+                    if array.size(continuationDotLabels) > 0
+                        for dotIdx = 0 to array.size(continuationDotLabels) - 1
+                            dotLab = array.get(continuationDotLabels, dotIdx)
+                            if not na(dotLab)
+                                label.delete(dotLab)
+                        array.clear(continuationDotLabels)
+                    continuationDirection := "short"
+                    continuationSignalBar := bar_index  // store signal bar index
+                    continuationTrackPrice := low   // start with signal bar's low
+                    
+                    lastSignalType := "sell"
+
+
+// CONTINUATION DOTS
+
+
+// Green Dot: After BUY signal, close > highest high from signal bar to previous bar
+if showContinuationDots and barstate.isconfirmed and continuationDirection == "long" and not na(continuationSignalBar)
+    barsBack = bar_index - continuationSignalBar
+    if barsBack > 0
+        // Update tracked highest high with previous bar's high
+        if high[1] > continuationTrackPrice
+            continuationTrackPrice := high[1]
+        
+        // Check if current close > highest high
+        if close > continuationTrackPrice
+            greenDot = label.new(bar_index, low - 0.2, "●", style=label.style_none, yloc=yloc.price, textcolor=colorBuy, size=size.normal)
+            array.push(continuationDotLabels, greenDot)
+            // Reset to current bar's high (next bar will compare to this)
+            continuationTrackPrice := high
+        else
+            // Update tracking to include current bar's high for next comparison
+            if high > continuationTrackPrice
+                continuationTrackPrice := high
+
+// Red Dot: After SELL signal, close < lowest low from signal bar to previous bar
+if showContinuationDots and barstate.isconfirmed and continuationDirection == "short" and not na(continuationSignalBar)
+    barsBack = bar_index - continuationSignalBar
+    if barsBack > 0
+        // Update tracked lowest low with previous bar's low
+        if low[1] < continuationTrackPrice
+            continuationTrackPrice := low[1]
+        
+        // Check if current close < lowest low
+        if close < continuationTrackPrice
+            redDot = label.new(bar_index, high + 0.2, "●", style=label.style_none, yloc=yloc.price, textcolor=colorSell, size=size.normal)
+            array.push(continuationDotLabels, redDot)
+            // Reset to current bar's low (next bar will compare to this)
+            continuationTrackPrice := low
+        else
+            // Update tracking to include current bar's low for next comparison
+            if low < continuationTrackPrice
+                continuationTrackPrice := low
+
+
+// WICK REJECTION WARNINGS
+
+
+if showWickRejection and barstate.isconfirmed and isMarketOpen()
+    // Calculate wick sizes and body size
+    bodySize = math.abs(close - open)
+    upperWick = high - math.max(open, close)
+    lowerWick = math.min(open, close) - low
+    wickThreshold = bodySize * 0.38
+    
+    for i = 0 to array.size(setups) - 1
+        lineRaw = array.get(setups, i)
+        [ticker, setupType, levelsStr] = splitLine(lineRaw)
+        
+        if showAllTickers or str.upper(ticker) == str.upper(syminfo.ticker)
+            levels = parseFloats(levelsStr)
+            
+            for j = 0 to array.size(levels) - 1
+                lv = array.get(levels, j)
+                
+                // BUY Rejection: upper wick crosses above level, wick > 38% of body
+                // Candle body stayed below or at level, but wick went above
+                if high > lv and math.max(open, close) <= lv and upperWick > wickThreshold
+                    wLab = label.new(bar_index, low - 0.2, "⚠️", style=label.style_none, yloc=yloc.price, textcolor=colorWarning, size=size.small, tooltip="Buy Rejection at " + str.tostring(lv, "#.##"), force_overlay=true)
+                    array.push(wickRejectionLabels, wLab)
+                
+                // SELL Rejection: lower wick crosses below level, wick > 38% of body
+                // Candle body stayed above or at level, but wick went below
+                if low < lv and math.min(open, close) >= lv and lowerWick > wickThreshold
+                    wLab = label.new(bar_index, high + 0.2, "⚠️", style=label.style_none, yloc=yloc.price, textcolor=colorWarning, size=size.small, tooltip="Sell Rejection at " + str.tostring(lv, "#.##"), force_overlay=true)
+                    array.push(wickRejectionLabels, wLab)
+
+
+// LEVEL VISUALIZATION (on last bar)
+
+
+if barstate.islast
+    // Clear previous elements
+    if array.size(levelLines) > 0
+        for l = 0 to array.size(levelLines) - 1
+            line.delete(array.get(levelLines, l))
+        array.clear(levelLines)
+    
+    if array.size(levelLabels) > 0
+        for l = 0 to array.size(levelLabels) - 1
+            label.delete(array.get(levelLabels, l))
+        array.clear(levelLabels)
+    
+    // Find 9:25 AM bar for line start
+    var int marketOpenBar = bar_index
+    currentDay = dayofmonth(time, "America/New_York")
+    currentMonth = month(time, "America/New_York")
+    currentYear = year(time, "America/New_York")
+    maxLookback = math.min(bar_index, 450)
+    int targetTimeMinutes = 9 * 60 + 25
+    
+    for lookback = 0 to maxLookback
+        barDay = dayofmonth(time[lookback], "America/New_York")
+        barMonth = month(time[lookback], "America/New_York")
+        barYear = year(time[lookback], "America/New_York")
+        
+        if barDay != currentDay or barMonth != currentMonth or barYear != currentYear
+            break
+        
+        barHour = hour(time[lookback], "America/New_York")
+        barMinute = minute(time[lookback], "America/New_York")
+        barTimeMinutes = barHour * 60 + barMinute
+        int barEndMinutes = barTimeMinutes + timeframe.multiplier
+        
+        if barTimeMinutes <= targetTimeMinutes and targetTimeMinutes < barEndMinutes
+            marketOpenBar := bar_index - lookback
+            break
+    
+    // Collect all levels with metadata
+    array.clear(allLevelsData)
+    array.clear(allLevelsType)
+    array.clear(allLevelsTicker)
+    array.clear(allLevelsIndex)
+    
+    if array.size(setups) > 0
+        for i = 0 to array.size(setups) - 1
+            lineRaw = array.get(setups, i)
+            [ticker, setupType, levelsStr] = splitLine(lineRaw)
+            if showAllTickers or str.upper(ticker) == str.upper(syminfo.ticker)
+                levels = parseFloats(levelsStr)
+                levelsToShow = showTargets ? array.size(levels) : math.min(1, array.size(levels))
+                for j = 0 to levelsToShow - 1
+                    lv = array.get(levels, j)
+                    array.push(allLevelsData, lv)
+                    array.push(allLevelsType, setupType)
+                    array.push(allLevelsTicker, ticker)
+                    array.push(allLevelsIndex, j + 1)  // Level number (1, 2, 3, 4...)
+    
+    // Sort levels by distance from current price
+    array.clear(sortedIndices)
+    for i = 0 to array.size(allLevelsData) - 1
+        array.push(sortedIndices, i)
+    
+    // Bubble sort by distance
+    if array.size(allLevelsData) > 0
+        for i = 0 to array.size(allLevelsData) - 2
+            for j = 0 to array.size(allLevelsData) - 2 - i
+                idx1 = array.get(sortedIndices, j)
+                idx2 = array.get(sortedIndices, j + 1)
+                dist1 = getDistanceFromPrice(array.get(allLevelsData, idx1))
+                dist2 = getDistanceFromPrice(array.get(allLevelsData, idx2))
+                if dist1 > dist2
+                    array.set(sortedIndices, j, idx2)
+                    array.set(sortedIndices, j + 1, idx1)
+    
+    // Find the two levels surrounding current price (for Dynamic line style)
+    float closestAbove = na
+    float closestBelow = na
+    for i = 0 to array.size(allLevelsData) - 1
+        lv = array.get(allLevelsData, i)
+        if lv >= close
+            if na(closestAbove) or lv < closestAbove
+                closestAbove := lv
+        if lv <= close
+            if na(closestBelow) or lv > closestBelow
+                closestBelow := lv
+    
+    // Draw closest levels
+    levelsDrawn = 0
+    for i = 0 to array.size(sortedIndices) - 1
+        if levelsDrawn >= maxVisibleLevels
+            break
+        
+        idx = array.get(sortedIndices, i)
+        lv = array.get(allLevelsData, idx)
+        setupType = array.get(allLevelsType, idx)
+        ticker = array.get(allLevelsTicker, idx)
+        levelNum = array.get(allLevelsIndex, idx)
+        
+        isBreakout = str.contains(setupType, "Breakout")
+        distance = getDistanceFromPrice(lv)
+        transparency = getLineTransparency(distance, close)
+        lineWidth = getLineWidth(distance, close)
+        
+        baseColor = isBreakout ? colorBreakout : colorBreakdown
+        lineColor = color.new(baseColor, transparency)
+        
+        // Determine line style
+        actualLineStyle = line.style_solid
+        if lineStyle == "Dashed"
+            actualLineStyle := line.style_dashed
+        else if lineStyle == "Dotted"
+            actualLineStyle := line.style_dotted
+        else if lineStyle == "Dynamic"
+            // Only the two levels surrounding current price are solid
+            isSurroundingLevel = (not na(closestAbove) and lv == closestAbove) or (not na(closestBelow) and lv == closestBelow)
+            if isSurroundingLevel
+                actualLineStyle := line.style_solid
+            else
+                // Distance-based style for other levels
+                percentDist = (distance / close) * 100
+                if percentDist < 1.5
+                    actualLineStyle := line.style_dashed
+                else
+                    actualLineStyle := line.style_dotted
+        
+        // Draw line
+        newLine = line.new(marketOpenBar, lv, bar_index + 10, lv, xloc=xloc.bar_index, color=lineColor, style=actualLineStyle, width=lineWidth, extend=extend.none)
+        array.push(levelLines, newLine)
+        
+        // Draw price label with arrow
+        arrowEmoji = isBreakout ? "🔼 " : "🔻 "
+        priceText = arrowEmoji + str.tostring(lv, "#.00")
+        labelBgColor = color.new(baseColor, 85)
+        labelTextColor = color.new(baseColor, 0)
+        
+        // Price label
+        priceLabel = label.new(bar_index + 12, lv, priceText, xloc=xloc.bar_index, yloc=yloc.price, style=label.style_label_left, color=labelBgColor, textcolor=labelTextColor, size=size.normal, tooltip=str.upper(ticker) + " " + setupType + " T" + str.tostring(levelNum))
+        array.push(levelLabels, priceLabel)
+        
+        levelsDrawn += 1
+    
+//Scalp levels End

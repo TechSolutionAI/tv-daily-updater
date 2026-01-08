@@ -1,0 +1,1167 @@
+//@version=5
+//Dashboard Start
+indicator("A+ Scalp Dashboard", overlay=true, max_labels_count=500, max_lines_count=500, max_boxes_count=500)
+
+
+// INPUTS maro maro final final
+
+
+// ORB Settings
+orb5_enabled = input.bool(false, "ORB5", group="Opening Range Breaks")
+orb15_enabled = input.bool(false, "ORB15", group="Opening Range Breaks")
+orb30_enabled = input.bool(false, "ORB30", group="Opening Range Breaks")
+orb60_enabled = input.bool(false, "ORB60", group="Opening Range Breaks")
+
+// Session Settings
+rth_start = input.session("0930-1600", "RTH Session", group="Session Settings")
+premarket_start = input.session("0400-0930", "Pre-Market Session", group="Session Settings")
+
+// Indicator Settings
+atr_length = input.int(20, "ATR Length", minval=1, group="Indicators")
+vwap_enabled = input.bool(false, "Show VWAP", group="Indicators")
+ema9_enabled = input.bool(false, "Show 9 EMA", group="Indicators")
+ema20_enabled = input.bool(false, "Show 20 EMA", group="Indicators")
+ema200_enabled = input.bool(false, "Show 200 EMA", group="Indicators")
+pm_lines_enabled = input.bool(false, "Show Pre-Market Lines", group="Indicators")
+pd_lines_enabled = input.bool(false, "Show Previous Day Lines", group="Indicators")
+
+// Signal Settings
+show_signals = input.bool(false, "Show Buy/Sell Signals", group="Signals")
+show_signal_labels = input.bool(false, "Show Signal Labels", group="Signals")
+tp1_percent = input.float(0.3, "TP1 %", step=0.1, group="Signals")
+tp2_percent = input.float(0.6, "TP2 %", step=0.1, group="Signals")
+sl_percent = input.float(1.0, "Stop Loss %", step=0.1, group="Signals")
+
+// Label Positioning
+label_offset = input.int(10, "Label Distance (bars)", minval=5, maxval=50, group="Signals", tooltip="Distance labels appear from signal bar to avoid candle overlap")
+show_line_labels = input.bool(false, "Show Line Name Labels", group="Signals", tooltip="Display price and name labels for all lines on the right side of chart")
+
+// Dashboard Settings
+show_dashboard = input.bool(true, "Show Dashboard", group="Dashboard")
+dashboard_position = input.string("bottom_left", "Dashboard Position", options=["top_left", "top_right", "bottom_left", "bottom_right"], group="Dashboard")
+publication_date = input.string("Jan 05, 2026", "Publication Date", group="Dashboard", tooltip="Manually set the indicator publication date shown in dashboard header")
+
+
+// SESSION DETECTION
+
+
+in_session = not na(time(timeframe.period, rth_start))
+in_premarket = not na(time(timeframe.period, premarket_start))
+
+// New trading day detection (for proper daily resets)
+var int last_trading_day = 0
+int current_trading_day = dayofmonth
+bool new_trading_day = current_trading_day != last_trading_day
+
+if new_trading_day
+    last_trading_day := current_trading_day
+
+// New RTH session detection (9:30 AM)
+new_session = in_session and not in_session[1]
+
+
+// OPENING RANGE CALCULATION
+
+
+var float or5_high = na
+var float or5_low = na
+var float or15_high = na
+var float or15_low = na
+var float or30_high = na
+var float or30_low = na
+var float or60_high = na
+var float or60_low = na
+
+// Completion flags
+var bool or5_complete = false
+var bool or15_complete = false
+var bool or30_complete = false
+var bool or60_complete = false
+
+// Time-based tracking (in minutes since RTH open)
+var int minutes_since_open = 0
+var float session_high = na
+var float session_low = na
+
+// Reset everything at start of NEW TRADING DAY
+if new_trading_day
+    session_high := na
+    session_low := na
+    or5_high := na
+    or5_low := na
+    or15_high := na
+    or15_low := na
+    or30_high := na
+    or30_low := na
+    or60_high := na
+    or60_low := na
+    // Reset completion flags
+    or5_complete := false
+    or15_complete := false
+    or30_complete := false
+    or60_complete := false
+    minutes_since_open := 0
+
+// Initialize session tracking at RTH open (9:30 AM)
+if new_session
+    session_high := high
+    session_low := low
+    minutes_since_open := 0
+
+// Time-based ORB calculation
+if in_session
+    // Calculate minutes elapsed since 9:30 AM
+    minutes_since_open := math.round((time - timestamp(year, month, dayofmonth, 9, 30, 0)) / 60000)
+    
+    // Update session high/low
+    session_high := math.max(session_high, high)
+    session_low := math.min(session_low, low)
+    
+    // ORB5 (5 minutes: 9:30-9:35 AM)
+    if minutes_since_open < 5
+        or5_high := session_high
+        or5_low := session_low
+        or5_complete := false
+    else if minutes_since_open >= 5 and not or5_complete
+        or5_complete := true
+    
+    // ORB15 (15 minutes: 9:30-9:45 AM)
+    if minutes_since_open < 15
+        or15_high := session_high
+        or15_low := session_low
+        or15_complete := false
+    else if minutes_since_open >= 15 and not or15_complete
+        or15_complete := true
+    
+    // ORB30 (30 minutes: 9:30-10:00 AM)
+    if minutes_since_open < 30
+        or30_high := session_high
+        or30_low := session_low
+        or30_complete := false
+    else if minutes_since_open >= 30 and not or30_complete
+        or30_complete := true
+    
+    // ORB60 (60 minutes: 9:30-10:30 AM)
+    if minutes_since_open < 60
+        or60_high := session_high
+        or60_low := session_low
+        or60_complete := false
+    else if minutes_since_open >= 60 and not or60_complete
+        or60_complete := true
+
+
+// PRE-MARKET RANGE
+
+
+var float pm_high = na
+var float pm_low = na
+var bool pm_captured = false
+
+// Reset pre-market tracking at start of new trading day
+if new_trading_day
+    pm_captured := false
+
+// Track pre-market range (before RTH opens)
+if in_premarket and not in_session
+    if not pm_captured
+        // First bar of pre-market for this day
+        pm_high := high
+        pm_low := low
+        pm_captured := true
+    else
+        // Update pre-market range
+        pm_high := math.max(pm_high, high)
+        pm_low := math.min(pm_low, low)
+
+
+// PREVIOUS DAY RANGE
+
+
+var float pd_high = na
+var float pd_low = na
+
+// Track daily high/low
+var float today_high = na
+var float today_low = na
+
+if new_trading_day
+    // Save yesterday's data
+    pd_high := today_high
+    pd_low := today_low
+    // Reset today's tracking
+    today_high := high
+    today_low := low
+else
+    // Update today's high/low
+    today_high := na(today_high) ? high : math.max(today_high, high)
+    today_low := na(today_low) ? low : math.min(today_low, low)
+
+
+// INDICATORS
+
+
+// VWAP
+vwap_value = ta.vwap(close)
+
+// EMAs
+ema9 = ta.ema(close, 9)
+ema20 = ta.ema(close, 20)
+ema200 = ta.ema(close, 200)
+
+// EMA Distance and Expansion/Convergence Logic (1-bar lookback)
+ema_distance = math.abs(ema9 - ema20)
+ema_distance_1bar_ago = math.abs(ema9[1] - ema20[1])
+
+// Check if EMAs are expanding (distance increasing compared to previous bar)
+ema_expanding = ema_distance > ema_distance_1bar_ago
+
+// EMA cross detection
+ema9_above_ema20 = ema9 > ema20
+ema9_below_ema20 = ema9 < ema20
+ema_bullish_cross = ta.crossover(ema9, ema20)
+ema_bearish_cross = ta.crossunder(ema9, ema20)
+
+// EMA Status Logic
+var string ema_status = "⚠️"
+var float ema_cross_price = na
+
+// Update status based on expansion/convergence
+if ema9_above_ema20
+    if ema_expanding
+        ema_status := "🔼"
+    else
+        ema_status := "⚠️"  // Converging while 9 above 20
+else if ema9_below_ema20
+    if ema_expanding
+        ema_status := "🔻"
+    else
+        ema_status := "⚠️"  // Converging while 9 below 20
+
+// Capture cross price
+if ema_bullish_cross or ema_bearish_cross
+    ema_cross_price := close
+
+// EMA Score for Active Score
+ema_score = ema_status == "🔼" or ema_status == "🔻" ? 1 : 0
+
+// 200 EMA Status (simple: above = bullish, below = bearish, NO score contribution)
+ema200_status = close >= ema200 ? "🔼" : "🔻"
+
+// 200 EMA visibility condition (±1% range with red/green logic)
+// Shows automatically when price within ±1%, regardless of setting
+ema200_upper_1pct = ema200 * 1.01  // +1%
+ema200_lower_1pct = ema200 * 0.99  // -1%
+
+// Red when price >= 200 EMA and within +1%
+show_ema200_red = close >= ema200 and close <= ema200_upper_1pct
+
+// Green when price < 200 EMA and within -1%
+show_ema200_green = close >= ema200_lower_1pct and close < ema200
+
+show_ema200 = show_ema200_red or show_ema200_green
+
+// 200 EMA Status (simple: above = bullish, below = bearish)
+
+ema200_score = 0  // Doesn't contribute to active score (long-term reference only)
+
+// ATR
+atr20 = ta.atr(atr_length)
+
+// RSI for momentum
+rsi7 = ta.rsi(close, 7)
+
+// MACD for momentum
+[macd_line, signal_line, macd_hist] = ta.macd(close, 12, 26, 9)
+
+// Volume
+avg_volume = ta.sma(volume, 20)
+rvol = avg_volume > 0 ? volume / avg_volume : 1.0
+
+
+// WEEKLY BIAS CALCULATION
+
+
+var float week_high = na
+var float week_low = na
+var float monday_close = na
+
+// New week detection (Monday)
+is_new_week = ta.change(weekofyear) != 0
+
+if is_new_week
+    week_high := high
+    week_low := low
+
+if not na(week_high)
+    week_high := math.max(week_high, high)
+    week_low := math.min(week_low, low)
+
+// Capture Monday close
+if dayofweek == dayofweek.monday and not in_session and in_session[1]
+    monday_close := close[1]
+
+// Weekly bias flags
+above_week_high = not na(week_high) and close > week_high
+below_week_low = not na(week_low) and close < week_low
+above_monday_close = not na(monday_close) and close > monday_close
+below_monday_close = not na(monday_close) and close < monday_close
+
+
+// METRIC CALCULATIONS
+
+
+// 1. RANGE METRIC (Tight/Normal/Wide)
+pm_range = not na(pm_high) and not na(pm_low) ? pm_high - pm_low : 0
+pm_pct = atr20 > 0 and pm_range > 0 ? pm_range / atr20 : 0
+
+range_status = pm_pct < 0.25 ? "🟢 Tight" : pm_pct <= 0.60 ? "🟡 Normal" : "🔴 Wide"
+
+// 2. VOLATILITY METRIC
+volatility_status = "🟡 Normal"
+
+// 3. TREND METRIC
+vwap_slope = ta.change(vwap_value, 10)
+price_above_vwap = close > vwap_value
+ema_bullish = ema9 > ema20
+
+trend_bullish = price_above_vwap and vwap_slope > 0 and ema_bullish
+trend_bearish = not price_above_vwap and vwap_slope < 0 and not ema_bullish
+
+trend_status = trend_bullish ? "📈 Bullish" : trend_bearish ? "📉 Bearish" : "➡️ Neutral"
+
+// 4. VOLUME METRIC
+volume_status = rvol < 1.0 ? "🔽 Weak" : rvol <= 2.0 ? "✅ Normal" : "🚀 Strong"
+
+// 5. MOMENTUM METRIC
+rsi_bullish = rsi7 > 55 and rsi7 < 70 and ta.rising(rsi7, 3)
+rsi_bearish = rsi7 > 30 and rsi7 < 45 and ta.falling(rsi7, 3)
+macd_bullish = macd_hist > 0 and ta.rising(macd_hist, 2)
+macd_bearish = macd_hist < 0 and ta.falling(macd_hist, 2)
+
+momentum_strong_bull = rsi_bullish and macd_bullish
+momentum_strong_bear = rsi_bearish and macd_bearish
+
+momentum_status = momentum_strong_bull ? "🚀 Bull" : momentum_strong_bear ? "💥 Bear" : "⚡ Mixed"
+
+// 6. BIAS METRIC
+bias_bullish = above_monday_close and above_week_high
+bias_bearish = below_monday_close and below_week_low
+
+bias_status = bias_bullish ? "🐂 Bull" : bias_bearish ? "🐻 Bear" : "🔄 Neutral"
+
+
+// ORB STATUS & ACTIVE SCORE
+
+
+// ORB5 Status
+orb5_status = not or5_complete ? "⏳" : close > or5_high ? "🔼" : close < or5_low ? "🔻" : "⚠️"
+orb5_score = orb5_status == "🔼" or orb5_status == "🔻" ? 1 : 0
+
+// ORB15 Status
+orb15_status = not or15_complete ? "⏳" : close > or15_high ? "🔼" : close < or15_low ? "🔻" : "⚠️"
+orb15_score = orb15_status == "🔼" or orb15_status == "🔻" ? 1 : 0
+
+// ORB30 Status
+orb30_status = not or30_complete ? "⏳" : close > or30_high ? "🔼" : close < or30_low ? "🔻" : "⚠️"
+orb30_score = orb30_status == "🔼" or orb30_status == "🔻" ? 1 : 0
+
+// ORB60 Status
+orb60_status = not or60_complete ? "⏳" : close > or60_high ? "🔼" : close < or60_low ? "🔻" : "⚠️"
+orb60_score = orb60_status == "🔼" or orb60_status == "🔻" ? 1 : 0
+
+// VWAP Status
+vwap_status = close > vwap_value * 1.001 ? "🔼" : close < vwap_value * 0.999 ? "🔻" : "⚠️"
+vwap_score = vwap_status == "🔼" or vwap_status == "🔻" ? 1 : 0
+
+// PreM Status (new zone logic: 80%-120% and -20%-20%)
+
+var float pm_80_level = na
+var float pm_20_level = na
+var float pm_120_level = na
+var float pm_minus20_level = na
+
+prem_status = "⚠️"
+prem_score = 0
+
+if pm_captured
+    pm_range := pm_high - pm_low
+    
+    // Calculate zone levels
+    pm_80_level := pm_low + (pm_range * 0.80)    // 80% of range
+    pm_20_level := pm_low + (pm_range * 0.20)    // 20% of range
+    pm_120_level := pm_low + (pm_range * 1.20)   // 120% of range (above high)
+    pm_minus20_level := pm_low + (pm_range * -0.20)  // -20% of range (below low)
+    
+    // Determine status based on price location
+    if close >= pm_80_level
+        prem_status := "🔼"
+        prem_score := 1
+    else if close <= pm_20_level
+        prem_status := "🔻"
+        prem_score := 1
+    else
+        prem_status := "⚠️"
+        prem_score := 0
+else
+    prem_status := "⏳"
+    prem_score := 0
+    pm_range := na
+    pm_80_level := na
+    pm_20_level := na
+    pm_120_level := na
+    pm_minus20_level := na
+
+// PreD Status (new zone logic: 80%-120% and -20%-20%)
+var float pd_range = na
+var float pd_80_level = na
+var float pd_20_level = na
+var float pd_120_level = na
+var float pd_minus20_level = na
+
+pred_status = "⚠️"
+pred_score = 0
+
+if not na(pd_high) and not na(pd_low)
+    pd_range := pd_high - pd_low
+    
+    // Calculate zone levels
+    pd_80_level := pd_low + (pd_range * 0.80)    // 80% of range
+    pd_20_level := pd_low + (pd_range * 0.20)    // 20% of range
+    pd_120_level := pd_low + (pd_range * 1.20)   // 120% of range (above high)
+    pd_minus20_level := pd_low + (pd_range * -0.20)  // -20% of range (below low)
+    
+    // Determine status based on price location
+    if close >= pd_80_level
+        pred_status := "🔼"
+        pred_score := 1
+    else if close <= pd_20_level
+        pred_status := "🔻"
+        pred_score := 1
+    else
+        pred_status := "⚠️"
+        pred_score := 0
+else
+    pred_status := "⏳"
+    pred_score := 0
+    pd_range := na
+    pd_80_level := na
+    pd_20_level := na
+    pd_120_level := na
+    pd_minus20_level := na
+
+// Total Active Score (0-8: ORB5, ORB15, ORB30, ORB60, VWAP, 9/20 EMA, PrevM, PrevD)
+active_score = orb5_score + orb15_score + orb30_score + orb60_score + vwap_score + ema_score + prem_score + pred_score
+
+// Check if 15, 30, 60 align (all breaking same direction)
+orb_aligned = (orb15_status == orb30_status and orb30_status == orb60_status and orb15_status != "⚠️" and orb15_status != "⏳")
+
+
+// HEADER EMOJI LOGIC
+
+
+header_emoji = "🚀"
+
+if range_status == "🔴 Wide" and volatility_status == "🔥 High"
+    header_emoji := "💣"
+else if momentum_status == "💥 Bear" and trend_status == "📉 Bearish"
+    header_emoji := "🧨"
+else if volume_status == "🔽 Weak"
+    header_emoji := "⚠️"
+else if active_score >= 5 and orb_aligned
+    header_emoji := "🚀"
+
+
+// TRADE SIGNAL LOGIC
+
+
+var float entry_price = na
+var float tp1_price = na
+var float tp2_price = na
+var float sl_price = na
+var string signal_type = ""
+var bool tp1_hit = false
+var bool tp2_hit = false
+var bool sl_hit = false
+var int signal_count = 0
+
+// ORB60 breakout signals (primary logic)
+orb60_break_up = not na(or60_high) and close > or60_high and close[1] <= or60_high
+orb60_break_down = not na(or60_low) and close < or60_low and close[1] >= or60_low
+
+// Buy signal - candle must CLOSE above the level
+buy_signal = orb60_break_up and show_signals and in_session
+
+// Sell signal - candle must CLOSE below the level
+sell_signal = orb60_break_down and show_signals and in_session
+
+// Trap detection - wick through level but no body close
+orb60_trap_up = not na(or60_high) and high > or60_high and close <= or60_high
+orb60_trap_down = not na(or60_low) and low < or60_low and close >= or60_low
+
+trap_signal = (orb60_trap_up or orb60_trap_down) and in_session
+
+if buy_signal
+    signal_count += 1
+    entry_price := close
+    tp1_price := entry_price * (1 + tp1_percent / 100)
+    tp2_price := entry_price * (1 + tp2_percent / 100)
+    sl_price := entry_price * (1 - sl_percent / 100)
+    signal_type := "BUY"
+    tp1_hit := false
+    tp2_hit := false
+    sl_hit := false
+
+if sell_signal
+    signal_count += 1
+    entry_price := close
+    tp1_price := entry_price * (1 - tp1_percent / 100)
+    tp2_price := entry_price * (1 - tp2_percent / 100)
+    sl_price := entry_price * (1 + sl_percent / 100)
+    signal_type := "SELL"
+    tp1_hit := false
+    tp2_hit := false
+    sl_hit := false
+
+// Track TP and SL hits
+if signal_type == "BUY" and not sl_hit
+    if high >= tp1_price and not tp1_hit
+        tp1_hit := true
+    if high >= tp2_price and not tp2_hit
+        tp2_hit := true
+    if low <= sl_price
+        sl_hit := true
+
+if signal_type == "SELL" and not sl_hit
+    if low <= tp1_price and not tp1_hit
+        tp1_hit := true
+    if low <= tp2_price and not tp2_hit
+        tp2_hit := true
+    if high >= sl_price
+        sl_hit := true
+
+
+// PLOTTING - ORB LEVELS
+
+
+// ORB5 (very subtle)
+orb5_high_plot = plot(orb5_enabled and not na(or5_high) ? or5_high : na, "ORB5 High (5min) ⏱️", color.new(color.yellow, 80), 1, plot.style_linebr)
+orb5_low_plot = plot(orb5_enabled and not na(or5_low) ? or5_low : na, "ORB5 Low (5min) ⏱️", color.new(color.yellow, 80), 1, plot.style_linebr)
+
+// ORB15 (subtle)
+orb15_high_plot = plot(orb15_enabled and not na(or15_high) ? or15_high : na, "ORB15 High (15min) ⏰", color.new(color.orange, 70), 1, plot.style_linebr)
+orb15_low_plot = plot(orb15_enabled and not na(or15_low) ? or15_low : na, "ORB15 Low (15min) ⏰", color.new(color.orange, 70), 1, plot.style_linebr)
+
+// ORB30 (subtle)
+orb30_high_plot = plot(orb30_enabled and not na(or30_high) ? or30_high : na, "ORB30 High (30min) ⏲️", color.new(color.purple, 70), 1, plot.style_linebr)
+orb30_low_plot = plot(orb30_enabled and not na(or30_low) ? or30_low : na, "ORB30 Low (30min) ⏲️", color.new(color.purple, 70), 1, plot.style_linebr)
+
+// Add labels for ORB5, 15, 30 (only if enabled and on last bar)
+if show_line_labels and orb5_enabled and not na(or5_high) and barstate.islast
+    label.new(bar_index, or5_high, "ORB5 HIGH: $" + str.tostring(or5_high, format.mintick), 
+         style=label.style_label_left, 
+         color=color.new(color.yellow, 0), 
+         textcolor=color.white, 
+         size=size.small)
+
+if show_line_labels and orb15_enabled and not na(or15_high) and barstate.islast
+    label.new(bar_index, or15_high, "ORB15 HIGH: $" + str.tostring(or15_high, format.mintick), 
+         style=label.style_label_left, 
+         color=color.new(color.orange, 0), 
+         textcolor=color.white, 
+         size=size.small)
+
+if show_line_labels and orb30_enabled and not na(or30_high) and barstate.islast
+    label.new(bar_index, or30_high, "ORB30 HIGH: $" + str.tostring(or30_high, format.mintick), 
+         style=label.style_label_left, 
+         color=color.new(color.purple, 0), 
+         textcolor=color.white, 
+         size=size.small)
+
+// ORB60 (bold - primary level)
+orb60_high_plot = plot(orb60_enabled and not na(or60_high) ? or60_high : na, "ORB60 High ⬆️", color.new(#26a69a, 0), 2, plot.style_line)
+orb60_low_plot = plot(orb60_enabled and not na(or60_low) ? or60_low : na, "ORB60 Low ⬇️", color.new(#ef5350, 0), 2, plot.style_line)
+
+// Add price labels for ORB60 levels
+if show_line_labels and orb60_enabled and not na(or60_high) and barstate.islast
+    label.new(bar_index, or60_high, "ORB60 HIGH: $" + str.tostring(or60_high, format.mintick), 
+         style=label.style_label_left, 
+         color=color.new(#26a69a, 0), 
+         textcolor=color.white, 
+         size=size.normal)
+
+if show_line_labels and orb60_enabled and not na(or60_low) and barstate.islast
+    label.new(bar_index, or60_low, "ORB60 LOW: $" + str.tostring(or60_low, format.mintick), 
+         style=label.style_label_left, 
+         color=color.new(#ef5350, 0), 
+         textcolor=color.white, 
+         size=size.normal)
+
+// VWAP (modern gradient blue)
+vwap_plot = plot(vwap_enabled ? vwap_value : na, "VWAP 💧", color.new(#2196F3, 0), 2, plot.style_line)
+
+// Add VWAP label
+if show_line_labels and vwap_enabled and barstate.islast
+    label.new(bar_index, vwap_value, "VWAP: $" + str.tostring(vwap_value, format.mintick), 
+         style=label.style_label_left, 
+         color=color.new(#2196F3, 0), 
+         textcolor=color.white, 
+         size=size.normal)
+
+// EMAs (modern colors)
+ema9_plot = plot(ema9_enabled ? ema9 : na, "9 EMA (Fast) 🔵", color.new(#00BCD4, 30), 1)
+ema20_plot = plot(ema20_enabled ? ema20 : na, "20 EMA (Slow) 🟣", color.new(#9C27B0, 30), 1)
+
+// 200 EMA with dynamic historical colors using line.new()
+// This allows hiding ENTIRE visible history when price exits ±1% range
+// Draws last 200 bars as line segments (optimized for performance)
+
+// Array to store line objects
+var line[] ema200_lines = array.new_line(0)
+
+// Delete all old lines
+if barstate.islast
+    while array.size(ema200_lines) > 0
+        line.delete(array.shift(ema200_lines))
+
+// Draw 200 EMA line segments only when current price in ±1% range
+if barstate.islast and show_ema200
+    // Draw line segments for visible history (last 200 bars - optimized)
+    for i = 1 to 200
+        if bar_index - i >= 0 and not na(ema200[i]) and not na(ema200[i-1])
+            // Color based on price vs 200 EMA at each historical bar
+            segment_color = close[i] >= ema200[i] ? color.red : color.green
+            new_line = line.new(bar_index - i, ema200[i], bar_index - i + 1, ema200[i-1],color=segment_color, width=1)
+            array.push(ema200_lines, new_line)
+
+// Add EMA labels
+if show_line_labels and ema9_enabled and barstate.islast
+    label.new(bar_index, ema9, "EMA 9: $" + str.tostring(ema9, format.mintick), 
+         style=label.style_label_left, 
+         color=color.new(#00BCD4, 0), 
+         textcolor=color.white, 
+         size=size.small)
+
+if show_line_labels and ema20_enabled and barstate.islast
+    label.new(bar_index, ema20, "EMA 20: $" + str.tostring(ema20, format.mintick), 
+         style=label.style_label_left, 
+         color=color.new(#9C27B0, 0), 
+         textcolor=color.white, 
+         size=size.small)
+
+// Pre-Market Range (very subtle) - only show if enabled
+pm_high_plot = plot(pm_lines_enabled and not na(pm_high) ? pm_high : na, "Pre-Market High 🌅", color.new(color.gray, 85), 1, plot.style_linebr)
+pm_low_plot = plot(pm_lines_enabled and not na(pm_low) ? pm_low : na, "Pre-Market Low 🌅", color.new(color.gray, 85), 1, plot.style_linebr)
+
+// Add PM range labels
+if show_line_labels and pm_lines_enabled and not na(pm_high) and barstate.islast
+    label.new(bar_index, pm_high, "PM HIGH: $" + str.tostring(pm_high, format.mintick), 
+         style=label.style_label_left, 
+         color=color.new(color.gray, 30), 
+         textcolor=color.white, 
+         size=size.small)
+
+if show_line_labels and pm_lines_enabled and not na(pm_low) and barstate.islast
+    label.new(bar_index, pm_low, "PM LOW: $" + str.tostring(pm_low, format.mintick), 
+         style=label.style_label_left, 
+         color=color.new(color.gray, 30), 
+         textcolor=color.white, 
+         size=size.small)
+
+// Previous Day Range (very subtle crosses) - only show if enabled
+pd_high_plot = plot(pd_lines_enabled and not na(pd_high) ? pd_high : na, "Previous Day High 📅", color.new(color.white, 90), 1, plot.style_cross)
+pd_low_plot = plot(pd_lines_enabled and not na(pd_low) ? pd_low : na, "Previous Day Low 📅", color.new(color.white, 90), 1, plot.style_cross)
+
+
+// PreM/PrevD HIGH/LOW LINES - Show HIGH in 80%-120% zone, LOW in -20%-20% zone
+// ONLY at current bar (no historical lines for clean chart)
+
+
+// Variables to store line objects
+var line prem_high_line_obj = na
+var line prem_low_line_obj = na
+var line prevd_high_line_obj = na
+var line prevd_low_line_obj = na
+
+// PreM High Line (show only when price is in 80%-120% zone, only at current bar)
+show_prem_high = pm_captured and not na(pm_80_level) and not na(pm_120_level) and 
+                 close >= pm_80_level and close <= pm_120_level
+
+// PreM Low Line (show only when price is in -20%-20% zone, only at current bar)
+show_prem_low = pm_captured and not na(pm_minus20_level) and not na(pm_20_level) and close >= pm_minus20_level and close <= pm_20_level
+
+// PrevD High Line (show only when price is in 80%-120% zone, only at current bar)
+show_prevd_high = not na(pd_high) and not na(pd_low) and not na(pd_80_level) and not na(pd_120_level) and 
+                  close >= pd_80_level and close <= pd_120_level
+
+// PrevD Low Line (show only when price is in -20%-20% zone, only at current bar)
+show_prevd_low = not na(pd_high) and not na(pd_low) and not na(pd_minus20_level) and not na(pd_20_level) and 
+                 close >= pd_minus20_level and close <= pd_20_level
+
+// Dynamic color function: Red (in high zone), Green (in low zone), Grey (exactly at level)
+get_prem_prevd_color(price_val, line_val, is_high_line) =>
+    if price_val == line_val
+        color.gray  // Grey when exactly at high or low
+    else if is_high_line
+        color.red   // Red for high line (price in 80%-120% zone)
+    else
+        color.green // Green for low line (price in -20%-20% zone)
+
+// Draw lines only on last bar (current bar) - this keeps chart clean!
+if barstate.islast
+    // Delete old lines first
+    line.delete(prem_high_line_obj)
+    line.delete(prem_low_line_obj)
+    line.delete(prevd_high_line_obj)
+    line.delete(prevd_low_line_obj)
+    
+    // Draw new lines extending left from current bar (if conditions met)
+    if show_prem_high
+        prem_high_line_obj := line.new(bar_index - 100, pm_high, bar_index, pm_high, 
+                                       color=get_prem_prevd_color(close, pm_high, true), width=2, style=line.style_solid)
+    
+    if show_prem_low
+        prem_low_line_obj := line.new(bar_index - 100, pm_low, bar_index, pm_low, 
+                                      color=get_prem_prevd_color(close, pm_low, false), width=2, style=line.style_solid)
+    
+    if show_prevd_high
+        prevd_high_line_obj := line.new(bar_index - 100, pd_high, bar_index, pd_high, color=get_prem_prevd_color(close, pd_high, true), width=2, style=line.style_solid)
+    
+    if show_prevd_low
+        prevd_low_line_obj := line.new(bar_index - 100, pd_low, bar_index, pd_low, 
+                                       color=get_prem_prevd_color(close, pd_low, false), width=2, style=line.style_solid)
+
+
+// 200 EMA LINE - Show only when price within ±20% of 200 EMA
+
+
+// Variable to store line object
+var line ema200_line_obj = na
+
+
+
+// Draw line only on last bar (current bar only)
+if barstate.islast
+    // Delete old line first
+    line.delete(ema200_line_obj)
+    
+    // Draw new line if condition met
+    if show_ema200
+        ema200_line_obj := line.new(bar_index - 100, ema200, bar_index, ema200, color=color.new(color.gray, 90), width=1, style=line.style_solid)
+
+// Labels for PreM/PrevD lines (only on last bar, right side)
+// Delete previous labels to avoid accumulation
+var label prem_high_label = na
+var label prem_low_label = na
+var label prevd_high_label = na
+var label prevd_low_label = na
+var label ema200_label = na
+
+if barstate.islast
+    // Delete old labels
+    label.delete(prem_high_label)
+    label.delete(prem_low_label)
+    label.delete(prevd_high_label)
+    label.delete(prevd_low_label)
+    label.delete(ema200_label)
+    
+    // Create new labels only if condition is true
+    if show_prem_high
+        prem_high_label := label.new(bar_index, pm_high, "PreM High", 
+             style=label.style_label_left, 
+             color=color.new(color.black, 35),  // 65% transparency
+             textcolor=color.white, 
+             size=size.small)
+    
+    if show_prem_low
+        prem_low_label := label.new(bar_index, pm_low, "PreM Low", 
+             style=label.style_label_left, 
+             color=color.new(color.black, 35),  // 65% transparency
+             textcolor=color.white, 
+             size=size.small)
+    
+    if show_prevd_high
+        prevd_high_label := label.new(bar_index, pd_high, "PrevD High", 
+             style=label.style_label_left, 
+             color=color.new(color.black, 35),  // 65% transparency
+             textcolor=color.white, 
+             size=size.small)
+    
+    if show_prevd_low
+        prevd_low_label := label.new(bar_index, pd_low, "PrevD Low", 
+             style=label.style_label_left, 
+             color=color.new(color.black, 35),  // 65% transparency
+             textcolor=color.white, 
+             size=size.small)
+    
+    if show_ema200
+        ema200_emoji = show_ema200_red ? "😇" : "👺"
+        ema200_label := label.new(bar_index, ema200, ema200_emoji, 
+             style=label.style_label_left, 
+             color=color.new(color.gray, 60),  // 40% transparency
+             textcolor=color.white, 
+             size=size.small,
+             tooltip="200 EMA")
+
+// Add Previous Day labels
+if show_line_labels and pd_lines_enabled and not na(pd_high) and barstate.islast
+    label.new(bar_index, pd_high, "PREV DAY HIGH: $" + str.tostring(pd_high, format.mintick), 
+         style=label.style_label_left, 
+         color=color.new(color.gray, 40), 
+         textcolor=color.white, 
+         size=size.small)
+
+if show_line_labels and pd_lines_enabled and not na(pd_low) and barstate.islast
+    label.new(bar_index, pd_low, "PREV DAY LOW: $" + str.tostring(pd_low, format.mintick), 
+         style=label.style_label_left, 
+         color=color.new(color.gray, 40), 
+         textcolor=color.white, 
+         size=size.small)
+
+
+// PLOTTING - SIGNALS
+
+
+plotshape(buy_signal, "Buy", shape.triangleup, location.belowbar, color.new(#26a69a, 0), size=size.small)
+plotshape(sell_signal, "Sell", shape.triangledown, location.abovebar, color.new(#ef5350, 0), size=size.small)
+plotshape(trap_signal, "Trap", shape.xcross, location.absolute, color.new(#FF9800, 0), size=size.tiny)
+
+// EMA Cross Labels removed per user request
+
+
+// ENHANCED LABELS - POSITIONED TO AVOID CANDLE OVERLAP
+
+
+// Create labels for buy signals - positioned away from candles
+if buy_signal and show_signal_labels
+    orb_level = "ORB60"
+    
+    // Breakout label - positioned left of signal to avoid candles
+    breakout_text = "▼ BREAKOUT UP\n" + orb_level + " | #" + str.tostring(signal_count) + "\nVol: " + str.tostring(math.round(rvol, 1)) + "x ⚡"
+    label.new(bar_index + label_offset, high, breakout_text, 
+         style=label.style_label_down, 
+         color=color.new(#ef5350, 0), 
+         textcolor=color.white, 
+         size=size.normal,
+         textalign=text.align_center)
+    
+    // Entry label - far right to avoid candles
+    entry_text = "ENTRY: $" + str.tostring(close, format.mintick)
+    label.new(bar_index + label_offset + 2, close, entry_text, 
+         style=label.style_label_left, 
+         color=color.new(#FF9800, 0), 
+         textcolor=color.white, 
+         size=size.normal,
+         textalign=text.align_left)
+    
+    // Stop Loss label - far right
+    sl_text = "⛔ SL: $" + str.tostring(sl_price, format.mintick)
+    label.new(bar_index + label_offset + 3, sl_price, sl_text, 
+         style=label.style_label_left, 
+         color=color.new(#d32f2f, 0), 
+         textcolor=color.white, 
+         size=size.small,
+         textalign=text.align_left)
+    
+    // TP1 label - far right
+    tp1_pct = tp1_percent
+    tp1_text = "TP1: $" + str.tostring(tp1_price, format.mintick) + " +" + str.tostring(tp1_pct, "#.#") + "%"
+    label.new(bar_index + label_offset + 3, tp1_price, tp1_text, 
+         style=label.style_label_left, 
+         color=color.new(#26a69a, 0), 
+         textcolor=color.white, 
+         size=size.small,
+         textalign=text.align_left)
+    
+    // TP2 label - far right
+    tp2_pct = tp2_percent
+    tp2_text = "TP2: $" + str.tostring(tp2_price, format.mintick) + " +" + str.tostring(tp2_pct, "#.#") + "%"
+    label.new(bar_index + label_offset + 3, tp2_price, tp2_text, 
+         style=label.style_label_left, 
+         color=color.new(#26a69a, 0), 
+         textcolor=color.white, 
+         size=size.small,
+         textalign=text.align_left)
+
+// Create labels for sell signals - positioned away from candles
+if sell_signal and show_signal_labels
+    orb_level = "ORB60"
+    
+    // Breakout label - positioned left of signal
+    breakout_text = "▲ BREAKOUT DOWN\n" + orb_level + " | #" + str.tostring(signal_count) + "\nVol: " + str.tostring(math.round(rvol, 1)) + "x ⚡"
+    label.new(bar_index + label_offset, low, breakout_text, 
+         style=label.style_label_up, 
+         color=color.new(#ef5350, 0), 
+         textcolor=color.white, 
+         size=size.normal,
+         textalign=text.align_center)
+    
+    // Entry label - far right
+    entry_text = "ENTRY: $" + str.tostring(close, format.mintick)
+    label.new(bar_index + label_offset + 2, close, entry_text, 
+         style=label.style_label_left, 
+         color=color.new(#FF9800, 0), 
+         textcolor=color.white, 
+         size=size.normal,
+         textalign=text.align_left)
+    
+    // Stop Loss label - far right
+    sl_text = "⛔ SL: $" + str.tostring(sl_price, format.mintick)
+    label.new(bar_index + label_offset + 3, sl_price, sl_text, 
+         style=label.style_label_left, 
+         color=color.new(#d32f2f, 0), 
+         textcolor=color.white, 
+         size=size.small,
+         textalign=text.align_left)
+    
+    // TP1 label - far right
+    tp1_pct = tp1_percent
+    tp1_text = "TP1: $" + str.tostring(tp1_price, format.mintick) + " +" + str.tostring(tp1_pct, "#.#") + "%"
+    label.new(bar_index + label_offset + 3, tp1_price, tp1_text, 
+         style=label.style_label_left, 
+         color=color.new(#26a69a, 0), 
+         textcolor=color.white, 
+         size=size.small,
+         textalign=text.align_left)
+    
+    // TP2 label - far right
+    tp2_pct = tp2_percent
+    tp2_text = "TP2: $" + str.tostring(tp2_price, format.mintick) + " +" + str.tostring(tp2_pct, "#.#") + "%"
+    label.new(bar_index + label_offset + 3, tp2_price, tp2_text, 
+         style=label.style_label_left, 
+         color=color.new(#26a69a, 0), 
+         textcolor=color.white, 
+         size=size.small,
+         textalign=text.align_left)
+
+
+// MODERN DASHBOARD WITH SOLID BACKGROUND (Hides Candles Behind)
+
+
+if show_dashboard and barstate.islast
+    
+    // Determine position
+    table_position = dashboard_position == "top_left" ? position.top_left : 
+                     dashboard_position == "top_right" ? position.top_right :
+                     dashboard_position == "bottom_left" ? position.bottom_left : position.bottom_right
+    
+    // Create modern styled table with SOLID background to hide candles
+    var table dashboard = table.new(table_position, 2, 23, 
+         bgcolor=color.new(#0d1117, 0),  // SOLID dark background - 0% transparency
+         frame_width=3, 
+         frame_color=color.new(#2196F3, 0),  // Solid blue frame
+         border_width=1, 
+         border_color=color.new(#30363d, 0))  // Solid borders
+    
+    // Modern Header with gradient effect - SOLID
+    table.cell(dashboard, 0, 0, "A+ SCALP " + header_emoji + " | " + publication_date, 
+         text_color=color.new(color.white, 0), 
+         bgcolor=color.new(#1976D2, 0),  // Solid blue
+         text_size=size.normal, text_halign=text.align_center)
+    table.merge_cells(dashboard, 0, 0, 1, 0)
+    
+  
+    
+    // METRICS - Modern styling - SOLID backgrounds
+    row = 2
+    table.cell(dashboard, 0, row, "📊 METRICS", 
+         text_color=color.new(#64B5F6, 0), 
+         bgcolor=color.new(#0d1117, 0),  // Solid
+         text_size=size.normal, text_halign=text.align_center)
+    table.merge_cells(dashboard, 0, row, 1, row)
+    
+    row += 1
+    table.cell(dashboard, 0, row, "Range", 
+         text_color=color.new(#B0BEC5, 0), 
+         bgcolor=color.new(#161b22, 0),  // Solid
+         text_size=size.normal, text_halign=text.align_center)
+    table.cell(dashboard, 1, row, range_status, 
+         text_color=color.white, 
+         bgcolor=color.new(#161b22, 0),  // Solid
+         text_size=size.normal, text_halign=text.align_left)
+    
+    row += 1
+    table.cell(dashboard, 0, row, "Volatility", 
+         text_color=color.new(#B0BEC5, 0), 
+         bgcolor=color.new(#0d1117, 0),  // Solid
+         text_size=size.normal, text_halign=text.align_center)
+    table.cell(dashboard, 1, row, volatility_status, 
+         text_color=color.white, 
+         bgcolor=color.new(#0d1117, 0),  // Solid
+         text_size=size.normal, text_halign=text.align_left)
+    
+    row += 1
+    table.cell(dashboard, 0, row, "Trend", 
+         text_color=color.new(#B0BEC5, 0), 
+         bgcolor=color.new(#161b22, 0),  // Solid
+         text_size=size.normal, text_halign=text.align_center)
+    table.cell(dashboard, 1, row, trend_status, 
+         text_color=color.white, 
+         bgcolor=color.new(#161b22, 0),  // Solid
+         text_size=size.normal, text_halign=text.align_left)
+    
+    row += 1
+    table.cell(dashboard, 0, row, "Volume", 
+         text_color=color.new(#B0BEC5, 0), 
+         bgcolor=color.new(#0d1117, 0),  // Solid
+         text_size=size.normal, text_halign=text.align_center)
+    table.cell(dashboard, 1, row, volume_status, 
+         text_color=color.white, 
+         bgcolor=color.new(#0d1117, 0),  // Solid
+         text_size=size.normal, text_halign=text.align_left)
+    
+    row += 1
+    table.cell(dashboard, 0, row, "Momentum", 
+         text_color=color.new(#B0BEC5, 0), 
+         bgcolor=color.new(#161b22, 0),  // Solid
+         text_size=size.normal, text_halign=text.align_center)
+    table.cell(dashboard, 1, row, momentum_status, 
+         text_color=color.white, 
+         bgcolor=color.new(#161b22, 0),  // Solid
+         text_size=size.normal, text_halign=text.align_left)
+    
+    row += 1
+    table.cell(dashboard, 0, row, "Bias", 
+         text_color=color.new(#B0BEC5, 0), 
+         bgcolor=color.new(#0d1117, 0),  // Solid
+         text_size=size.normal, text_halign=text.align_center)
+    table.cell(dashboard, 1, row, bias_status, 
+         text_color=color.white, 
+         bgcolor=color.new(#0d1117, 0),  // Solid
+         text_size=size.normal, text_halign=text.align_left)
+    
+    // Section divider - SOLID
+    // STATUS - Modern section - SOLID
+    row += 1
+    table.cell(dashboard, 0, row, "🎯 STATUS", 
+         text_color=color.new(#64B5F6, 0), 
+         bgcolor=color.new(#161b22, 0),  // Changed background for visual separation
+         text_size=size.normal, text_halign=text.align_center)
+    table.merge_cells(dashboard, 0, row, 1, row)
+    
+    row += 1
+    table.cell(dashboard, 0, row, "ORB5", 
+         text_color=color.new(#B0BEC5, 0), 
+         bgcolor=color.new(#161b22, 0),  // Solid
+         text_size=size.normal,
+         text_halign=text.align_center)
+    table.cell(dashboard, 1, row, orb5_status, 
+         text_color=color.white, 
+         bgcolor=color.new(#161b22, 0),  // Solid
+         text_size=size.normal,
+         text_halign=text.align_center)
+    
+    row += 1
+    table.cell(dashboard, 0, row, "ORB15", 
+         text_color=color.new(#B0BEC5, 0), 
+         bgcolor=color.new(#0d1117, 0),  // Solid
+         text_size=size.normal, text_halign=text.align_center)
+    table.cell(dashboard, 1, row, orb15_status, 
+         text_color=color.white, 
+         bgcolor=color.new(#0d1117, 0),  // Solid
+         text_size=size.normal, text_halign=text.align_center)
+    
+    row += 1
+    table.cell(dashboard, 0, row, "ORB30", 
+         text_color=color.new(#B0BEC5, 0), 
+         bgcolor=color.new(#161b22, 0),  // Solid
+         text_size=size.normal, text_halign=text.align_center)
+    table.cell(dashboard, 1, row, orb30_status, 
+         text_color=color.white, 
+         bgcolor=color.new(#161b22, 0),  // Solid
+         text_size=size.normal, text_halign=text.align_center)
+    
+    row += 1
+    table.cell(dashboard, 0, row, "ORB60", 
+         text_color=color.new(#B0BEC5, 0), 
+         bgcolor=color.new(#0d1117, 0),  // Solid
+         text_size=size.normal, text_halign=text.align_center)
+    table.cell(dashboard, 1, row, orb60_status, 
+         text_color=color.white, 
+         bgcolor=color.new(#0d1117, 0),  // Solid
+         text_size=size.normal, text_halign=text.align_center)
+    
+    row += 1
+    table.cell(dashboard, 0, row, "VWAP", 
+         text_color=color.new(#B0BEC5, 0), 
+         bgcolor=color.new(#161b22, 0),  // Solid
+         text_size=size.normal, text_halign=text.align_center)
+    table.cell(dashboard, 1, row, vwap_status, 
+         text_color=color.white, 
+         bgcolor=color.new(#161b22, 0),  // Solid
+         text_size=size.normal, text_halign=text.align_center)
+    
+    row += 1
+    table.cell(dashboard, 0, row, "9/20 EMA", 
+         text_color=color.new(#B0BEC5, 0), 
+         bgcolor=color.new(#0d1117, 0),  // Solid
+         text_size=size.normal, text_halign=text.align_center)
+    table.cell(dashboard, 1, row, ema_status, 
+         text_color=color.white, 
+         bgcolor=color.new(#0d1117, 0),  // Solid
+         text_size=size.normal, text_halign=text.align_center)
+    
+    row += 1
+    table.cell(dashboard, 0, row, "200 EMA", 
+         text_color=color.new(#B0BEC5, 0), 
+         bgcolor=color.new(#161b22, 0),  // Solid
+         text_size=size.normal, text_halign=text.align_center)
+    table.cell(dashboard, 1, row, ema200_status, 
+         text_color=color.white, 
+         bgcolor=color.new(#161b22, 0),  // Solid
+         text_size=size.normal, text_halign=text.align_center)
+    
+    row += 1
+    table.cell(dashboard, 0, row, "PreM", 
+         text_color=color.new(#B0BEC5, 0), 
+         bgcolor=color.new(#0d1117, 0),  // Solid
+         text_size=size.normal, text_halign=text.align_center)
+    table.cell(dashboard, 1, row, prem_status, 
+         text_color=color.white, 
+         bgcolor=color.new(#0d1117, 0),  // Solid
+         text_size=size.normal, text_halign=text.align_center)
+    
+    row += 1
+    table.cell(dashboard, 0, row, "PrevD", 
+         text_color=color.new(#B0BEC5, 0), 
+         bgcolor=color.new(#0d1117, 0),  // Solid
+         text_size=size.normal, text_halign=text.align_center)
+    table.cell(dashboard, 1, row, pred_status, 
+         text_color=color.white, 
+         bgcolor=color.new(#0d1117, 0),  // Solid
+         text_size=size.normal, text_halign=text.align_center)
+    
+    // Last Trade Section - if active - SOLID
+    if not na(entry_price)
+        row += 1
+        table.cell(dashboard, 0, row, "💼 TRADE", 
+             text_color=color.new(#64B5F6, 0), 
+             bgcolor=color.new(#0d1117, 0),  // Solid
+             text_size=size.normal, text_halign=text.align_center)
+        table.merge_cells(dashboard, 0, row, 1, row)
+        
+        row += 1
+        trade_status_text = sl_hit ? "❌ SL Hit" : tp2_hit ? "✅✅ TP2" : tp1_hit ? "✅ TP1" : "⏳ Active"
+        trade_color = sl_hit ? color.new(#ef5350, 0) : tp2_hit or tp1_hit ? color.new(#26a69a, 0) : color.new(#FFC107, 0)
+        
+        table.cell(dashboard, 0, row, signal_type, 
+             text_color=color.new(#B0BEC5, 0), 
+             bgcolor=color.new(#161b22, 0),  // Solid
+             text_size=size.normal, text_halign=text.align_center)
+        table.cell(dashboard, 1, row, trade_status_text, 
+             text_color=color.white, 
+             bgcolor=trade_color,  // Already solid
+             text_size=size.normal, text_halign=text.align_center)
+
+
+// ALERTS
+
+
+alertcondition(buy_signal, "ORB60 Buy", "🚀 ORB60 Buy - {{ticker}} @ {{close}}")
+alertcondition(sell_signal, "ORB60 Sell", "🔻 ORB60 Sell - {{ticker}} @ {{close}}")
+alertcondition(trap_signal, "Trap Warning", "⚠️ Trap - {{ticker}}")
+alertcondition(tp1_hit, "TP1 Hit", "✅ TP1 - {{ticker}} @ {{close}}")
+alertcondition(tp2_hit, "TP2 Hit", "✅✅ TP2 - {{ticker}} @ {{close}}")
+alertcondition(sl_hit, "SL Hit", "❌ SL - {{ticker}} @ {{close}}")
+alertcondition(ema_bullish_cross, "EMA Bullish Cross", "🔵 EMA 9 crossed above EMA 20 - {{ticker}} @ {{close}}")
+alertcondition(ema_bearish_cross, "EMA Bearish Cross", "🟣 EMA 9 crossed below EMA 20 - {{ticker}} @ {{close}}")
+//Dashboard End

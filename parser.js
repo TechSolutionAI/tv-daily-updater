@@ -175,7 +175,7 @@ const breakoutPattern =/🔼\s*(?:Aggressive\s+)?Breakout(?:\s+Entry)?(?:\s+Abov
         return summary.join('\n');
     }
 }
-
+//⬆️ 🐂  ⬆️ 🐂 🧨
 //testing
 function testParser() {
     const parser = new SWJMessageParser();

@@ -6,14 +6,14 @@ var path = require('path');
 // Load configuration from environment variables
 const TRADINGVIEW_COOKIE = process.env.TRADINGVIEW_COOKIE || '';
 const TRADINGVIEW_USERNAME = process.env.TRADINGVIEW_USERNAME || 'stockcryptobots';
-const SCRIPT_ID = process.env.TRADINGVIEW_SCRIPT_ID_1 || 'USER;d07048cd1bc440a9a05d7544eddaa260';
-const SCRIPT_VERSION = process.env.TRADINGVIEW_VERSION_1 || '78.0';
+const SCRIPT_ID = process.env.TRADINGVIEW_SCRIPT_ID_3 || 'USER;b7d09b7e02b44df8af2045cf42cbe39b';
+const SCRIPT_VERSION = process.env.TRADINGVIEW_VERSION_3 || '5.0';
 
 // Extract the ID part after the semicolon for the URL
 const scriptIdPart = SCRIPT_ID.includes(';') ? SCRIPT_ID.split(';')[1] : SCRIPT_ID;
 const encodedScriptId = encodeURIComponent('PUB;' + scriptIdPart);
 
-var pinePath = path.join(__dirname, 'pinescriptcode.txt');
+var pinePath = path.join(__dirname, 'goatscalplevels.txt');
 var pineSource = fs.readFileSync(pinePath, 'utf8');
 var encodedPineSource = encodeURIComponent(pineSource);
 var options = {
@@ -33,7 +33,7 @@ var options = {
     'sec-fetch-mode': 'cors',
     'sec-fetch-site': 'same-site',
     'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36',
-    "cookie": TRADINGVIEW_COOKIE,
+    'Cookie': TRADINGVIEW_COOKIE,
   },
   body: 'source=' + encodedPineSource + '&extra=' + encodeURIComponent(JSON.stringify({
     originalScriptId: SCRIPT_ID,
@@ -45,3 +45,4 @@ request(options, function (error, response) {
   if (error) throw new Error(error);
   console.log(response.body);
 });
+
